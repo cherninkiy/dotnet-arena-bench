@@ -1,6 +1,6 @@
 # ADR-002: Native Side
 
-**Статус:** Proposed
+**Статус:** Accepted
 **Дата:** 2026-10-13
 **Контекст:** dotnet-arena-bench, PoC-2 (границы: I01–I08)
 **Связанные документы:** [concept.md](../concept.md), [ADR-001: Arena Design](ADR-001-arena-design.md)
@@ -68,13 +68,22 @@ mmap (I08). Для честного сравнения «arena vs pinned managed
 
 **Кросс-платформенная резолюция библиотек:**
 
-| ОС | Библиотека |
-|---|---|
-| Linux | `libc` |
-| macOS | `libSystem.B.dylib` |
-| Windows | `msvcrt.dll` / `ucrtbase.dll` |
+| ОС | Библиотека | Имя для `LibraryImport` |
+|---|---|---|
+| Linux | `libc` | `libc` |
+| macOS | `libSystem.dylib` (симлинк на `libSystem.B.dylib`) | `libSystem` |
+| Windows | `ucrtbase.dll` | `ucrtbase` |
 
-Резолюция — через `RuntimeInformation.IsOSPlatform` в `LibcResolver.cs`.
+**Оговорка:** голый `libc` **не** резолвится на современных macOS
+(`DllNotFoundException`, dotnet/sdk #6642) — поэтому macOS идёт через
+явный `libSystem`.
+
+Резолюция — через `RuntimeInformation.IsOSPlatform` в `LibcResolver.cs`
+(имена библиотек + пробы ОС). Так как `LibraryImport` требует
+compile-time константу, каждая функция объявлена по одному разу на ОС
+(`Linux`/`Mac`/`Win`), а выбор между ними делается **один раз** при
+инициализации типа — в `NativeMethods` в функциональный указатель
+(`delegate* managed<...>`). На hot path границы per-call OS-dispatch нет.
 
 **Альтернативы:**
 

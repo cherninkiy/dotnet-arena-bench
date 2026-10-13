@@ -1,6 +1,6 @@
 # ADR-001: Arena Design
 
-**Статус:** Proposed
+**Статус:** Accepted
 **Дата:** 2026-10-13
 **Контекст:** dotnet-arena-bench, PoC-1 и PoC-2
 **Связанные документы:** [concept.md](../concept.md), [ADR-002: Native Side](ADR-002-native-side.md)
@@ -120,7 +120,7 @@ bump-логика с align 16/64 даёт **абсолютное** выравн�
 **Решение:** два API:
 
 ```csharp
-// Auto-align по sizeof(T) / Unsafe.AlignOf<T>
+// Auto-align по defaultAlign
 Span<T> AllocSpan<T>(int count) where T : unmanaged;
 IntPtr AllocPtr<T>(int count) where T : unmanaged;
 
@@ -130,7 +130,16 @@ IntPtr AllocPtr(int size, int align);
 ```
 
 `AllocSpan<T>` / `AllocPtr<T>` выравнивают по
-`max(Unsafe.AlignOf<T>(), defaultAlign)`.
+`max(defaultAlign, естественное выравнивание примитивов)`.
+
+**Уточнение (от реализации):** в BCL **нет** публичного `AlignOf<T>()`-API
+(только proposal dotnet/runtime #2167), поэтому auto-align берёт
+`max(defaultAlign, естественное выравнивание примитивов)` — точный
+`typeof(T)`-switch, JIT-константа. Для составных unmanaged-типов
+естественное выравнивание неизвестно — `defaultAlign` и есть контракт:
+должен быть **не меньше** естественного выравнивания `T` (default 16
+покрывает все типы PoC без явного layout-выравнивания); иначе —
+explicit API.
 
 `defaultAlign` — параметр конструктора арены, по умолчанию **16**.
 Для alignment-бенчей (S10–S12) `defaultAlign = 64` задаётся явно
@@ -140,7 +149,7 @@ IntPtr AllocPtr(int size, int align);
 ```csharp
 var arena16 = new Arena(1 << 20);              // defaultAlign = 16
 var arena64 = new Arena(1 << 20, defaultAlign: 64);
-var span    = arena16.AllocSpan<Commodity32>(); // align = max(4, 16) = 16
+var span    = arena16.AllocSpan<Commodity32>(); // align = defaultAlign = 16
 var buf     = arena16.AllocBytes(1024, 64);     // явный align 64
 ```
 
