@@ -1,1 +1,12 @@
-<Solution><Folder Name="/src/"><Project Path="src/ArenaBench.Core/ArenaBench.Core.csproj" /></Folder><Folder Name="/tests/"><Project Path="tests/ArenaBench.Core.Tests/ArenaBench.Core.Tests.csproj" /></Folder></Solution>
+<Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/ArenaBench.Allocator.Bench/ArenaBench.Allocator.Bench.csproj" />
+    <Project Path="benchmarks/ArenaBench.Serialization.Bench/ArenaBench.Serialization.Bench.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/ArenaBench.Core/ArenaBench.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ArenaBench.Core.Tests/ArenaBench.Core.Tests.csproj" />
+  </Folder>
+</Solution>
