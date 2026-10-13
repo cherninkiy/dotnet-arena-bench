@@ -1,1 +1,1 @@
-<Solution><Folder Name="/src/"><Project Path="src/ArenaBench.Core/ArenaBench.Core.csproj" /></Folder></Solution>
+<Solution><Folder Name="/src/"><Project Path="src/ArenaBench.Core/ArenaBench.Core.csproj" /></Folder><Folder Name="/tests/"><Project Path="tests/ArenaBench.Core.Tests/ArenaBench.Core.Tests.csproj" /></Folder></Solution>
