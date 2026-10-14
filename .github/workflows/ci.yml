@@ -21,7 +21,7 @@ on:
           - default
           - dry
       filter:
-        description: 'BDN --filter glob, e.g. *T2* or *T1StreamBench* (empty or * = all)'
+        description: 'BDN --filter glob: * = all (default), *T2*, *T1StreamBench*; empty falls back to the CI smoke subset'
         required: false
         default: '*'
         type: string
@@ -44,6 +44,18 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      # Bench defaults live here, in one place. A push/pull_request smoke runs one
+      # representative PoC-1 class - T2ServiceRecord16Bench covers every source and
+      # every strategy (S01-S20) on the 16 B record - which keeps the bench steps
+      # near three minutes per runner; the other series (T1, T3, the remaining T2
+      # sizes) are started by hand, where `filter` defaults to the whole set. PoC-2
+      # has four cases, so CI always runs it in full.
+      # They are read as shell variables, not interpolated into the script, so a
+      # filter string can never be re-interpreted as shell code.
+      BENCH_JOB: ${{ inputs.job || 'short' }}
+      POC1_FILTER: ${{ inputs.filter || '*T2ServiceRecord16Bench*' }}
+      POC2_FILTER: ${{ inputs.filter || '*' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,20 +74,20 @@ jobs:
       # The short bench is a regression smoke run, not a metrics collection
       # (ADR-002: no C toolchain involved). A manual run can ask for the full
       # profile or for a single series; push and pull_request always keep the
-      # whole matrix and the defaults.
+      # whole matrix and the defaults from `env`.
       - name: Bench - PoC-1 (Serialization)
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.os == 'all' || inputs.os == matrix.os }}
         run: >-
           dotnet run -c Release --project benchmarks/ArenaBench.Serialization.Bench --
-          --job "${{ inputs.job || 'short' }}"
-          --filter "${{ inputs.filter || '*' }}"
+          --job "$BENCH_JOB"
+          --filter "$POC1_FILTER"
 
       - name: Bench - PoC-2 (Allocator)
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.os == 'all' || inputs.os == matrix.os }}
         run: >-
           dotnet run -c Release --project benchmarks/ArenaBench.Allocator.Bench --
-          --job "${{ inputs.job || 'short' }}"
-          --filter "${{ inputs.filter || '*' }}"
+          --job "$BENCH_JOB"
+          --filter "$POC2_FILTER"
 
       # One report per benchmark class (md/csv/html) plus the BDN logs, so a run
       # can be inspected or cited in docs/*.md without re-running it. Uploaded
