@@ -69,6 +69,9 @@ public sealed class ArenaBufferWriter : IBufferWriter<byte>, IDisposable
     /// <summary>Starts a new message in the same block: no allocation, no zeroing.</summary>
     public void Reset() => _written = 0;
 
+    /// <summary>The bytes written since the last <see cref="Reset"/>.</summary>
+    public ReadOnlySpan<byte> WrittenSpan => _memory.Span[.._written];
+
     /// <summary>
     /// The manager owns nothing - the arena owns the block - so this only ends
     /// the IMemoryOwner contract. MemoryManager&lt;T&gt; implements IDisposable
