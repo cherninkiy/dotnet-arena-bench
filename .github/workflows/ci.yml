@@ -6,9 +6,39 @@ on:
   pull_request:
     branches: [main, dev]
 
+  # Manual run from the Actions tab: choose the BenchmarkDotNet job, an optional
+  # filter and (for long profiles) a single runner instead of the matrix.
+  # Artifacts are uploaded for every run, manual or not.
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'BenchmarkDotNet job'
+        required: true
+        default: short
+        type: choice
+        options:
+          - short
+          - default
+          - dry
+      filter:
+        description: 'BDN --filter glob, e.g. *T2* or *T1StreamBench* (empty or * = all)'
+        required: false
+        default: '*'
+        type: string
+      os:
+        description: 'Runner(s): all, or one label - a long profile is cheaper on a single runner'
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
 jobs:
   build:
-    name: build-test-short-bench (${{ matrix.os }})
+    name: build-test-bench (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -29,10 +59,34 @@ jobs:
       - name: Test
         run: dotnet test -c Release
 
-      # Short bench is a regression smoke run, not a metrics collection
-      # (ADR-002: does not require any C toolchain).
-      - name: Short bench - PoC-1 (Serialization)
-        run: dotnet run -c Release --project benchmarks/ArenaBench.Serialization.Bench -- --job short
+      # The short bench is a regression smoke run, not a metrics collection
+      # (ADR-002: no C toolchain involved). A manual run can ask for the full
+      # profile or for a single series; push and pull_request always keep the
+      # whole matrix and the defaults.
+      - name: Bench - PoC-1 (Serialization)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.os == 'all' || inputs.os == matrix.os }}
+        run: >-
+          dotnet run -c Release --project benchmarks/ArenaBench.Serialization.Bench --
+          --job "${{ inputs.job || 'short' }}"
+          --filter "${{ inputs.filter || '*' }}"
 
-      - name: Short bench - PoC-2 (Allocator)
-        run: dotnet run -c Release --project benchmarks/ArenaBench.Allocator.Bench -- --job short
+      - name: Bench - PoC-2 (Allocator)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.os == 'all' || inputs.os == matrix.os }}
+        run: >-
+          dotnet run -c Release --project benchmarks/ArenaBench.Allocator.Bench --
+          --job "${{ inputs.job || 'short' }}"
+          --filter "${{ inputs.filter || '*' }}"
+
+      # One report per benchmark class (md/csv/html) plus the BDN logs, so a run
+      # can be inspected or cited in docs/*.md without re-running it. Uploaded
+      # even when a bench step failed, which is exactly when it matters.
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks-${{ matrix.os }}
+          path: |
+            BenchmarkDotNet.Artifacts/results
+            BenchmarkDotNet.Artifacts/log
+          if-no-files-found: warn
+          retention-days: 14
