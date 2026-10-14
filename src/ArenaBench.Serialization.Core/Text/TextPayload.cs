@@ -104,6 +104,39 @@ public static class TextPayload
         return sum;
     }
 
+    /// <summary>
+    /// C09: writes one message as JSON by hand - literals plus Utf8Formatter, no
+    /// writer object and no escaping. The output is byte-identical to
+    /// Utf8JsonWriter for the generated (ASCII, escape-free) messages, which the
+    /// tests pin down, so C09 and C03/C04 do the same work.
+    /// </summary>
+    public static int WriteMessageManual(Span<byte> destination, in TextMessage message)
+    {
+        int written = Append(destination, 0, "{\"Timestamp\":");
+        Utf8Formatter.TryFormat(message.Timestamp, destination[written..], out int count);
+        written += count;
+        written = Append(destination, written, ",\"FlowId\":");
+        Utf8Formatter.TryFormat(message.FlowId, destination[written..], out count);
+        written += count;
+        written = Append(destination, written, ",\"SourceNode\":");
+        Utf8Formatter.TryFormat(message.SourceNode, destination[written..], out count);
+        written += count;
+        written = Append(destination, written, ",\"TargetNode\":");
+        Utf8Formatter.TryFormat(message.TargetNode, destination[written..], out count);
+        written += count;
+        written = Append(destination, written, ",\"Demand\":");
+        Utf8Formatter.TryFormat(message.Demand, destination[written..], out count);
+        written += count;
+        written = Append(destination, written, ",\"Name\":\"");
+        written = Append(destination, written, message.Name);
+        written = Append(destination, written, "\",\"Path\":\"");
+        written = Append(destination, written, message.Path);
+        return Append(destination, written, "\"}");
+    }
+
+    private static int Append(Span<byte> destination, int written, string text) =>
+        written + Encoding.ASCII.GetBytes(text, destination[written..]);
+
     private static double DemandOf(int lineIndex) => 1000.0 + lineIndex;
 
     private static string CodeOf(int lineIndex) => $"A{lineIndex % 100:D2}";
