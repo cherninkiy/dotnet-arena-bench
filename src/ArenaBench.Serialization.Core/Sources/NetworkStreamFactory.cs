@@ -49,6 +49,10 @@ public sealed class NetworkStreamSource : IStreamSource
         _peer = listener.Accept();
         _peer.NoDelay = true;
 
+        // SO_SNDBUF/SO_RCVBUF are hints and the OS may clamp them. The buffers
+        // are sized for several payloads, so a full payload always fits into the
+        // kernel and Rewind() cannot block; a payload beyond the clamped size
+        // would need a reader interleaved with the sender.
         int bufferSize = NetworkStreamFactory.BufferSize(_payload.Length);
         _peer.SendBufferSize = bufferSize;
         client.ReceiveBufferSize = bufferSize;

@@ -74,7 +74,13 @@ public static class T2Strategies
         return sum;
     }
 
-    /// <summary>S09: bulk struct view via MemoryMarshal.Cast, no per-record copy at all.</summary>
+    /// <summary>
+    /// S09: bulk struct view via MemoryMarshal.Cast, no per-record copy at all.
+    /// The cast does not verify alignment: the image lives in a managed
+    /// <c>byte[]</c>, whose data the runtime aligns to at least 8 bytes - enough
+    /// for the ladder, which requires no more. ARM-specific alignment behaviour
+    /// is out of scope for the PoC (backlog B-005).
+    /// </summary>
     public static long Cast<TFormat, TRecord>(ReadOnlySpan<byte> payload, int recordCount)
         where TFormat : IRecordFormat<TRecord>
         where TRecord : unmanaged

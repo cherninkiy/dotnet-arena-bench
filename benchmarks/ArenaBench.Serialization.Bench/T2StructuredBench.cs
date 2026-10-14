@@ -24,9 +24,12 @@ namespace ArenaBench.Serialization.Bench;
 /// the parsing axis and read a managed <c>byte[]</c>, so in each group the
 /// other axis is fixed.
 /// </para>
+/// <para>
+/// Diagnosers come from <see cref="BenchmarkConfig"/> alone: the config is
+/// applied to every benchmark in the assembly, so no attribute is repeated
+/// here.
+/// </para>
 /// </remarks>
-[MemoryDiagnoser]
-[ThreadingDiagnoser]
 public abstract class T2StructuredBench<TFormat, TRecord>
     where TFormat : IRecordFormat<TRecord>
     where TRecord : unmanaged
