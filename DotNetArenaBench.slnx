@@ -5,6 +5,7 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/ArenaBench.Core/ArenaBench.Core.csproj" />
+    <Project Path="src/ArenaBench.Serialization.Core/ArenaBench.Serialization.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ArenaBench.Core.Tests/ArenaBench.Core.Tests.csproj" />
