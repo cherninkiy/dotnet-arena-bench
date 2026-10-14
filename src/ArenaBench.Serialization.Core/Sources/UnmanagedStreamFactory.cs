@@ -30,6 +30,9 @@ public sealed unsafe class UnmanagedStreamSource : IStreamSource
     {
         // aligned_alloc (POSIX) requires a size that is a multiple of the
         // alignment, so the block is rounded up instead of taken verbatim.
+        // AlignedAlloc throws OutOfMemoryException on failure (it never returns
+        // null), so a failed reservation cannot reach the pointer arithmetic
+        // below; no local null check is needed for symmetry with SafeHandle.
         nuint size = RoundUp((nuint)payload.Length, (nuint)alignment);
         _buffer = (byte*)NativeMemory.AlignedAlloc(size, (nuint)alignment);
         payload.CopyTo(new Span<byte>(_buffer, payload.Length));

@@ -43,15 +43,12 @@ internal sealed class SafeArenaHandle : SafeHandle
 
     private static unsafe IntPtr AllocAligned(nuint size)
     {
-        void* block = NativeMemory.AlignedAlloc(alignment: 64, byteCount: size);
-        if (block == null)
-        {
-            // AlignedAlloc returns null on OOM (it does not throw): without this
-            // check IntPtr.Zero would silently flow into pointer arithmetic.
-            throw new OutOfMemoryException($"AlignedAlloc failed for {size} bytes.");
-        }
-
-        return (IntPtr)block;
+        // AlignedAlloc throws OutOfMemoryException when the block cannot be
+        // reserved (docs: "Allocating byteCount of memory with alignment
+        // failed"), so there is no null result to guard against here, and a
+        // null check would be dead code. byteCount 0 is legal and yields a
+        // valid pointer that must still be passed to AlignedFree.
+        return (IntPtr)NativeMemory.AlignedAlloc(alignment: 64, byteCount: size);
     }
 
     public override bool IsInvalid => handle == IntPtr.Zero;

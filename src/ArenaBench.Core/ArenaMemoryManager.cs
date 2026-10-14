@@ -40,7 +40,11 @@ public sealed unsafe class ArenaMemoryManager<T> : MemoryManager<T> where T : un
     {
         ArgumentOutOfRangeException.ThrowIfNegative(elementIndex);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(elementIndex, _count);
-        return new MemoryHandle((void*)(_pointer + elementIndex * Unsafe.SizeOf<T>()));
+
+        // The offset is computed in nint: elementIndex * sizeof(T) in int would
+        // wrap for a wide T before Count could ever get that large.
+        nint byteOffset = (nint)elementIndex * (nint)Unsafe.SizeOf<T>();
+        return new MemoryHandle((byte*)_pointer + byteOffset);
     }
 
     /// <inheritdoc />

@@ -194,16 +194,29 @@ public sealed class Arena : IDisposable
     private IntPtr Allocate(nuint size, uint align)
     {
         nuint mask = align - 1;
-        nuint alignedOffset = (_offset + mask) & ~mask;
-        // checked: the padding addition and the total can wrap nuint for huge
-        // requests — wrapping would silently bypass the overflow check.
-        if (checked(alignedOffset + size) > _handle.Size)
+
+        // Padding first: a wrap here would silently produce a small offset, so
+        // instead of relying on nuint arithmetic the wrap is rejected.
+        nuint padded = _offset + mask;
+        if (padded < _offset)
         {
             throw new InvalidOperationException(
-                $"Arena overflow: need {checked(alignedOffset + size)} bytes, size is {_handle.Size}.");
+                $"Arena overflow: {align}-byte padding for {size} bytes does not fit the address space.");
         }
 
-        _offset = checked(alignedOffset + size);
+        nuint alignedOffset = padded & ~mask;
+
+        // Subtraction instead of addition: the sum cannot wrap, so a huge
+        // request always reports an arena overflow - it can neither bypass the
+        // check nor surface as an OverflowException from a `checked` context.
+        if (alignedOffset > _handle.Size || size > _handle.Size - alignedOffset)
+        {
+            throw new InvalidOperationException(
+                $"Arena overflow: need {size} bytes at offset {alignedOffset} with {align}-byte alignment, "
+                + $"size is {_handle.Size}.");
+        }
+
+        _offset = alignedOffset + size;
         return (IntPtr)((nint)_handle.BasePointer + (nint)alignedOffset);
     }
 }
