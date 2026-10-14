@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ArenaBench.Core\ArenaBench.Core.csproj" />
+    <ProjectReference Include="..\..\src\ArenaBench.Serialization.Core\ArenaBench.Serialization.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
