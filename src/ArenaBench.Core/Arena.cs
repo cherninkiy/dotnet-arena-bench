@@ -59,7 +59,10 @@ public sealed class Arena : IDisposable
 
     /// <summary>
     /// RAII scope over <see cref="Mark"/>/<see cref="Release"/> (ADR-001 D4):
-    /// Dispose rolls the offset back to the mark.
+    /// Dispose rolls the offset back to the mark. A <see cref="Reset"/> between
+    /// the scope and its disposal invalidates the mark, so the rollback throws
+    /// <see cref="ArgumentException"/> (out-of-order use is rejected) instead
+    /// of restoring an offset the arena no longer has.
     /// </summary>
     public ArenaScope Scope() => new(this, Mark());
 
@@ -93,6 +96,9 @@ public sealed class Arena : IDisposable
     /// (dotnet/runtime #2167): defaultAlign is their alignment contract and
     /// must be >= natural alignment of T; explicit
     /// <see cref="AllocBytes(int,int)"/> covers special cases.
+    /// count 0 returns an empty span over a valid pointer, as the BCL does for
+    /// zero-sized allocations; the alignment padding may still advance
+    /// <see cref="UsedBytes"/>.
     /// </summary>
     public Span<T> AllocSpan<T>(int count) where T : unmanaged
     {
@@ -111,6 +117,8 @@ public sealed class Arena : IDisposable
     /// <summary>
     /// Allocates count elements of T, auto-aligned to max(defaultAlign,
     /// natural alignment of primitives) (ADR-001 D3); raw pointer variant.
+    /// count 0 accepts no bytes and returns a valid pointer that must not be
+    /// dereferenced (the BCL convention for zero-sized allocations).
     /// </summary>
     public IntPtr AllocPtr<T>(int count) where T : unmanaged
     {
@@ -140,7 +148,8 @@ public sealed class Arena : IDisposable
     /// <summary>
     /// Allocates a <see cref="Memory{T}"/> view (ADR-001 D9): the memory manager is
     /// created per allocation and is NOT tracked by the arena — Reset/Dispose
-    /// invalidates it (undefined behavior).
+    /// invalidates it (undefined behavior). count 0 yields an empty view whose
+    /// <c>Pin</c> is still valid.
     /// </summary>
     public Memory<T> AllocMemory<T>(int count) where T : unmanaged
     {

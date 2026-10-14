@@ -10,6 +10,7 @@ namespace ArenaBench.Core;
 /// must keep it (and its <see cref="Memory{T}"/>) alive no longer than the
 /// owning arena. Reset/Dispose of the arena invalidates the memory —
 /// using it afterwards is undefined behavior.
+/// count 0 is legal and describes an empty view.
 /// </summary>
 public sealed unsafe class ArenaMemoryManager<T> : MemoryManager<T> where T : unmanaged
 {

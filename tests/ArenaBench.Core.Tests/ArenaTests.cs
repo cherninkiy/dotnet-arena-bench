@@ -195,4 +195,45 @@ public class ArenaTests
         using MemoryHandle onePastEnd = manager.Pin(16); // legal one-past-end
         Assert.Equal(pointer + 16 * sizeof(int), (nint)onePastEnd.Pointer);
     }
+
+    [Fact]
+    public void ZeroCount_ReturnsEmptyViewsOverAValidPointer()
+    {
+        using var arena = new Arena(1024);
+
+        Span<int> span = arena.AllocSpan<int>(0);
+        Memory<int> memory = arena.AllocMemory<int>(0);
+        IntPtr pointer = arena.AllocPtr<int>(0);
+
+        Assert.True(span.IsEmpty);
+        Assert.Equal(0, memory.Length);
+        Assert.True(memory.Span.IsEmpty);
+        Assert.NotEqual(IntPtr.Zero, pointer);
+    }
+
+    [Fact]
+    public void ZeroCount_StillSpendsAlignmentPadding()
+    {
+        using var arena = new Arena(1024);
+        arena.AllocBytes(1, 1);
+        nuint afterByte = arena.UsedBytes;
+
+        arena.AllocPtr<int>(0); // no elements, but the offset is aligned to 16
+
+        Assert.Equal(1L, (long)afterByte);
+        Assert.Equal(16L, (long)arena.UsedBytes);
+    }
+
+    [Fact]
+    public unsafe void ZeroCount_ManagerPinStaysValid()
+    {
+        using var arena = new Arena(1024);
+        IntPtr pointer = arena.AllocPtr<int>(0);
+        var manager = new ArenaMemoryManager<int>(pointer, 0);
+
+        Assert.True(manager.GetSpan().IsEmpty);
+
+        using MemoryHandle handle = manager.Pin(0); // one-past-end of an empty view
+        Assert.Equal((nint)pointer, (nint)handle.Pointer);
+    }
 }
