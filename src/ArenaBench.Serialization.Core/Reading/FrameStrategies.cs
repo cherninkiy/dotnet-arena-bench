@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Buffers.Binary;
 using System.IO.Pipelines;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -93,25 +94,33 @@ public static class FrameStrategies
                     break;
                 }
 
-                // Peek the length first: consuming a header before the whole
-                // frame is buffered would lose it on the next refill.
-                if (!FrameFormat.TryGetFrameSize(sequence.UnreadSpan, ByteOrder.LittleEndian, out int frameSize, out _)
-                    || sequence.Remaining < frameSize)
+                // Peek the length before consuming anything: a frame whose header
+                // straddles two segments must not be dropped on the next refill,
+                // and UnreadSpan alone is short in exactly that case.
+                if (!TryPeekPayloadLength(ref sequence, out int payloadLength))
                 {
                     break;
                 }
 
-                sequence.TryReadLittleEndian(out int payloadLength);
+                int frameSize = FrameFormat.HeaderSize + payloadLength;
+                if (sequence.Remaining < frameSize)
+                {
+                    break;
+                }
+
+                sequence.Advance(sizeof(int));
                 sequence.TryReadLittleEndian(out short kindRaw); // SequenceReader exposes only the signed 16-bit overload
-                ushort kind = (ushort)kindRaw;
                 sequence.TryRead(out byte codec);
                 sequence.TryRead(out byte flags);
-                sum += FrameFormat.ChecksumOf(payloadLength, kind, codec, flags);
+                sum += FrameFormat.ChecksumOf(payloadLength, (ushort)kindRaw, codec, flags);
                 sequence.Advance(payloadLength);
                 frames++;
             }
 
-            reader.AdvanceTo(sequence.Position);
+            // Examined = everything that is buffered. Saying so is what makes the
+            // reader refill from the stream instead of handing the same segment
+            // back forever when a frame is still incomplete.
+            reader.AdvanceTo(sequence.Position, result.Buffer.End);
             if (frames < frameCount && result.IsCompleted)
             {
                 throw new EndOfStreamException($"Pipe completed after {frames} of {frameCount} frames.");
@@ -120,6 +129,37 @@ public static class FrameStrategies
 
         reader.Complete();
         return sum;
+    }
+
+    /// <summary>
+    /// Peeks the little-endian payload length without consuming it. The fast path
+    /// is the contiguous run; a header split across two segments is assembled byte
+    /// by byte, which is what keeps the reader from looping without consuming on a
+    /// pooled pipe.
+    /// </summary>
+    private static bool TryPeekPayloadLength(ref SequenceReader<byte> sequence, out int payloadLength)
+    {
+        ReadOnlySpan<byte> unread = sequence.UnreadSpan;
+        if (unread.Length >= sizeof(int))
+        {
+            payloadLength = BinaryPrimitives.ReadInt32LittleEndian(unread);
+            return true;
+        }
+
+        Span<byte> raw = stackalloc byte[sizeof(int)];
+        for (int i = 0; i < raw.Length; i++)
+        {
+            if (!sequence.TryPeek(i, out byte value))
+            {
+                payloadLength = 0;
+                return false;
+            }
+
+            raw[i] = value;
+        }
+
+        payloadLength = BinaryPrimitives.ReadInt32LittleEndian(raw);
+        return true;
     }
 
     /// <summary>
