@@ -55,6 +55,49 @@ public sealed class TextPayloadTests
     }
 
     [Fact]
+    public void MalformedTextLine_Throws()
+    {
+        // No delimiter after the demand field: the strict parser must fail instead
+        // of slicing to the end of the payload and looping forever.
+        byte[] malformed = "flow-1,1000.000"u8.ToArray();
+
+        Assert.Throws<InvalidDataException>(() => TextPayload.ParseSpan(malformed));
+    }
+
+    [Fact]
+    public void UnparsableDemandField_Throws()
+    {
+        byte[] malformed = "flow-1,not-a-number,A01\n"u8.ToArray();
+
+        Assert.Throws<InvalidDataException>(() => TextPayload.ParseSpan(malformed));
+    }
+
+    [Fact]
+    public void NonArrayJson_Throws()
+    {
+        byte[] notAnArray = "{\"Timestamp\":1}"u8.ToArray();
+
+        Assert.Throws<InvalidDataException>(() => JsonPayload.Parse(notAnArray));
+    }
+
+    [Fact]
+    public void JsonPropertyOfTheWrongType_Throws()
+    {
+        byte[] wrongType = "[{\"Timestamp\":\"abc\"}]"u8.ToArray();
+
+        Assert.Throws<InvalidDataException>(() => JsonPayload.Parse(wrongType));
+    }
+
+    [Fact]
+    public void ManualWriter_TooSmallBuffer_Throws()
+    {
+        byte[] tooSmall = new byte[TextPayload.MaxMessageLength - 1];
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            TextPayload.WriteMessageManual(tooSmall, TextMessage.Create(1)));
+    }
+
+    [Fact]
     public void ManualWriter_MatchesUtf8JsonWriter()
     {
         TextMessage message = TextMessage.Create(5);

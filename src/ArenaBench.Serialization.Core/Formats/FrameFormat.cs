@@ -108,7 +108,17 @@ public static class FrameFormat
             return false;
         }
 
-        payloadLength = FieldCodec.ReadInt32(available, order);
+        int length = FieldCodec.ReadInt32(available, order);
+        if (length < 0 || length > MaxPayloadSize)
+        {
+            // A length outside the declared range is not a frame this format
+            // describes: fail fast instead of skipping a nonsense number of bytes
+            // (or waiting for a frame that can never arrive).
+            throw new InvalidDataException(
+                $"Frame payload length {length} is outside the supported range 0..{MaxPayloadSize}.");
+        }
+
+        payloadLength = length;
         frameSize = HeaderSize + payloadLength;
         return true;
     }

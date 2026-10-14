@@ -11,10 +11,20 @@ namespace ArenaBench.Serialization.Core.Text;
 /// path contains no managed buffer at all.
 /// </summary>
 /// <remarks>
-/// GetMemory/GetSpan hand out the remaining space of the block. Utf8JsonWriter
-/// asks for a size hint before it flushes a window: a hint that no longer fits
-/// means the fixed-size arena is exhausted, and that fails loudly rather than
-/// silently growing a managed buffer.
+/// <para>
+/// GetMemory/GetSpan hand out the remaining space of the block and
+/// <see cref="Advance"/> tracks how much of it is used. This is a fixed-capacity
+/// writer, not a growing one: <see cref="IBufferWriter{T}"/> allows an
+/// implementation to fail when a hint cannot be satisfied, but then the caller
+/// has to guarantee that the value fits. Utf8JsonWriter grows its window with the
+/// value being written, so serializing a document that does not fit throws in the
+/// middle - size the arena for the largest message, or use
+/// <c>ArrayBufferWriter&lt;byte&gt;</c> when the size is unknown.
+/// </para>
+/// <para>
+/// The hint is checked for every window, so the writer is exactly as forgiving as
+/// the arena block is large: the failure mode is deliberate, not an artefact.
+/// </para>
 /// </remarks>
 public sealed class ArenaBufferWriter : IBufferWriter<byte>, IDisposable
 {
@@ -79,6 +89,12 @@ public sealed class ArenaBufferWriter : IBufferWriter<byte>, IDisposable
     /// </summary>
     public void Dispose() => ((IDisposable)_manager).Dispose();
 
+    /// <summary>
+    /// Fails when the next window cannot be satisfied. IBufferWriter&lt;T&gt; does not
+    /// require an implementation to grow its buffer, but it does require the
+    /// implementation to be explicit about it: this is the single place where that
+    /// contract is enforced, and it runs for GetMemory and GetSpan alike.
+    /// </summary>
     private void EnsureHint(int sizeHint)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(sizeHint);

@@ -25,8 +25,8 @@ public class T3TextBench
     /// <summary>Capacity of the arena buffers - one message needs far less.</summary>
     private const int ArenaCapacity = 16 * 1024;
 
-    /// <summary>Room for one hand-written message.</summary>
-    private const int ManualCapacity = 256;
+    /// <summary>Room for one hand-written message - the writer's own upper bound.</summary>
+    private const int ManualCapacity = TextPayload.MaxMessageLength;
 
     private byte[] _text = null!;
     private byte[] _json = null!;

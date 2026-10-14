@@ -16,6 +16,15 @@ namespace ArenaBench.Serialization.Core.Reading;
 /// reader - and every strategy returns the summed frame fingerprint, so the
 /// numbers are comparable with T2 and across sources.
 /// </summary>
+/// <remarks>
+/// Frame headers are little-endian on the wire: <see cref="BinaryReader"/> is
+/// little-endian by definition, and <see cref="Primitives"/> takes the order
+/// explicitly, while <see cref="MemoryMarshalRead"/>/<see cref="UnsafeReadUnaligned"/>
+/// rely on the native (little-endian) order of every platform the PoC targets.
+/// <see cref="Pipelines"/> and <see cref="WithCarry"/> are little-endian only:
+/// a big-endian frame variant would need its own strategy rather than a flag,
+/// so it is stated here instead of being discovered from a wrong number.
+/// </remarks>
 public static class FrameStrategies
 {
     /// <summary>V02/V05/V06/S21: field-by-field walk with BinaryPrimitives over a span.</summary>
@@ -75,10 +84,28 @@ public static class FrameStrategies
         return sum;
     }
 
-    /// <summary>V04: PipeReader/SequenceReader over a stream; frames are little-endian.</summary>
+    /// <summary>
+    /// V04: PipeReader/SequenceReader over a stream. The header is read with
+    /// <c>TryReadLittleEndian</c>, i.e. this strategy is little-endian only -
+    /// the T1 wire order (see the class remarks).
+    /// </summary>
     public static long Pipelines(Stream stream, int frameCount)
     {
         PipeReader reader = PipeReader.Create(stream, new StreamPipeReaderOptions(leaveOpen: true));
+        try
+        {
+            return ReadPipedFrames(reader, frameCount);
+        }
+        finally
+        {
+            // PipeReader is not IDisposable: Complete() is what releases its
+            // buffered segments, and it has to run even when a frame is missing.
+            reader.Complete();
+        }
+    }
+
+    private static long ReadPipedFrames(PipeReader reader, int frameCount)
+    {
         long sum = 0;
         int frames = 0;
 
@@ -127,15 +154,14 @@ public static class FrameStrategies
             }
         }
 
-        reader.Complete();
         return sum;
     }
 
     /// <summary>
-    /// Peeks the little-endian payload length without consuming it. The fast path
-    /// is the contiguous run; a header split across two segments is assembled byte
-    /// by byte, which is what keeps the reader from looping without consuming on a
-    /// pooled pipe.
+    /// Peeks the little-endian payload length without consuming it. The
+    /// contiguous run is the fast path (one read, no per-byte calls); a header
+    /// that straddles two segments falls back to four <c>TryPeek</c> calls, which
+    /// is cheap and, unlike <c>UnreadSpan</c>, never reports a short header.
     /// </summary>
     private static bool TryPeekPayloadLength(ref SequenceReader<byte> sequence, out int payloadLength)
     {
@@ -164,7 +190,8 @@ public static class FrameStrategies
 
     /// <summary>
     /// V07/V08: chunked stream read through a caller-owned carry buffer
-    /// (<paramref name="carry"/> must hold the longest frame: 136 B).
+    /// (<paramref name="carry"/> must hold the longest frame: 136 B). The header
+    /// is read little-endian - the T1 wire order (see the class remarks).
     /// </summary>
     public static long WithCarry(Stream stream, Span<byte> carry, int frameCount)
     {

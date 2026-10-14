@@ -32,6 +32,13 @@ namespace ArenaBench.Serialization.Bench;
 /// applied to every benchmark in the assembly, so no attribute is repeated
 /// here.
 /// </para>
+/// <para>
+/// Arena cases are combined deliberately, one variable at a time: S10/S11/S12
+/// share the strategy and vary only the alignment (1/16/64, which the payload
+/// source makes physical by placing the payload behind a one-byte probe), S19
+/// reuses the align-16 block of S11 so that only the byte order differs, and
+/// S13-S18 read the align-16 block as well.
+/// </para>
 /// </remarks>
 public abstract class T2StructuredBench<TFormat, TRecord>
     where TFormat : IRecordFormat<TRecord>
@@ -81,11 +88,14 @@ public abstract class T2StructuredBench<TFormat, TRecord>
         _networkReader = new BinaryReader(_network.Stream, Encoding.UTF8, leaveOpen: true);
         _unmanagedReader = new BinaryReader(_unmanaged.Stream, Encoding.UTF8, leaveOpen: true);
 
-        // S10-S20: the very same bytes in arena memory, at the alignments the
-        // alignment axis asks for (ADR-001 D3).
+        // S10-S20: the very same bytes in arena memory. The payload source
+        // places the payload behind a one-byte probe, so align 1 really lands on
+        // offset 1 (unaligned), align 16 on offset 16 and align 64 on offset 64.
         _arenaTight = ArenaPayloadFactory.Create(_littleEndianPayload, alignment: 1);
         _arenaAlign16 = ArenaPayloadFactory.Create(_littleEndianPayload, alignment: 16);
         _arenaAlign64 = ArenaPayloadFactory.Create(_littleEndianPayload, alignment: 64);
+
+        // Same alignment as S11 on purpose: S19 must differ by byte order alone.
         _arenaBigEndian = ArenaPayloadFactory.Create(_bigEndianPayload, alignment: 16);
         _arenaReader = new BinaryReader(_arenaAlign16.Stream, Encoding.UTF8, leaveOpen: true);
 

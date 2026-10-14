@@ -22,18 +22,38 @@ public sealed class ArenaPayloadTests
     private static readonly byte[] Payload =
         T2Payload.Create<VideoRecord64Format, VideoRecord64>(RecordCount, ByteOrder.LittleEndian);
 
+    /// <summary>
+    /// The alignment axis is only an axis if the three cases really land on
+    /// different addresses: the probe allocation inside the payload source puts
+    /// them at modulo 64 = 1 / 16 / 0. Without it every case would be 64-byte
+    /// aligned, because the arena block base is, and S10/S11/S12 would measure
+    /// one and the same layout.
+    /// </summary>
     [Theory]
-    [InlineData(1)]
-    [InlineData(16)]
-    [InlineData(64)]
-    public void Block_IsAlignedAsRequested(int alignment)
+    [InlineData(1, 1)]
+    [InlineData(16, 16)]
+    [InlineData(64, 0)]
+    public void Block_LandsOnTheRequestedAlignment(int alignment, int expectedModulo64)
     {
         using ArenaPayloadSource source = ArenaPayloadFactory.Create(Payload, alignment);
 
         Assert.Equal(alignment, source.Alignment);
         Assert.Equal(Payload.Length, source.Length);
         Assert.Equal(0, source.Buffer.ToInt64() % alignment);
+        Assert.Equal(expectedModulo64, source.Buffer.ToInt64() % 64);
         Assert.Equal(Payload, source.Span.ToArray());
+    }
+
+    [Fact]
+    public void Alignments_ProduceDistinctAddresses()
+    {
+        using ArenaPayloadSource tight = ArenaPayloadFactory.Create(Payload, alignment: 1);
+        using ArenaPayloadSource align16 = ArenaPayloadFactory.Create(Payload, alignment: 16);
+        using ArenaPayloadSource align64 = ArenaPayloadFactory.Create(Payload, alignment: 64);
+
+        long[] offsets = [tight.Buffer.ToInt64() % 64, align16.Buffer.ToInt64() % 64, align64.Buffer.ToInt64() % 64];
+
+        Assert.Equal(3, offsets.Distinct().Count());
     }
 
     [Fact]
@@ -52,6 +72,34 @@ public sealed class ArenaPayloadTests
         source.Rewind();
         Assert.Equal(expected, T2Strategies.BinaryReader<VideoRecord64Format, VideoRecord64>(
             reader, RecordCount, scratch));
+    }
+
+    [Fact]
+    public void TightBlock_ReadsTheSameRecords()
+    {
+        // The unaligned case is what S10/V05 measure, so it has to decode the very
+        // same records as the aligned one - on x64 the penalty is performance, not
+        // correctness.
+        long expected = T2Payload.Fingerprint<VideoRecord64Format, VideoRecord64>(RecordCount);
+
+        using ArenaPayloadSource source = ArenaPayloadFactory.Create(Payload, alignment: 1);
+
+        Assert.Equal(expected, T2Strategies.Primitives<VideoRecord64Format, VideoRecord64>(
+            source.Span, RecordCount, ByteOrder.LittleEndian));
+        Assert.Equal(expected, T2Strategies.MemoryMarshalRead<VideoRecord64Format, VideoRecord64>(
+            source.Span, RecordCount));
+        Assert.Equal(expected, T2Strategies.UnsafeReadUnaligned<VideoRecord64Format, VideoRecord64>(
+            source.Span, RecordCount));
+    }
+
+    [Fact]
+    public void ChunkedStream_RejectsInvalidArguments()
+    {
+        using ChunkedStream chunked = ChunkedStreamFactory.Create(Payload, maxChunk: 5);
+        byte[] buffer = new byte[16];
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => chunked.Read(buffer, 0, -1));
+        Assert.Throws<ArgumentException>(() => chunked.Read(buffer, 8, 16));
     }
 
     [Fact]

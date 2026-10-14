@@ -33,6 +33,13 @@ public sealed unsafe class UnmanagedStreamSource : IStreamSource
         // AlignedAlloc throws OutOfMemoryException on failure (it never returns
         // null), so a failed reservation cannot reach the pointer arithmetic
         // below; no local null check is needed for symmetry with SafeHandle.
+        //
+        // Unlike the arena path this call goes straight to the CRT, so the
+        // alignment is honoured as an allocation alignment - and it can only be
+        // honoured down to what the platform guarantees (malloc alignment, 8 B on
+        // x64). A truly "tight" (unaligned) layout therefore cannot be allocated
+        // at all; it only exists as an offset inside a block, which is why the
+        // alignment axis is modelled in ArenaPayloadSource.
         nuint size = RoundUp((nuint)payload.Length, (nuint)alignment);
         _buffer = (byte*)NativeMemory.AlignedAlloc(size, (nuint)alignment);
         payload.CopyTo(new Span<byte>(_buffer, payload.Length));

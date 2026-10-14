@@ -48,6 +48,9 @@ public class T1StreamBench
         _reader = new BinaryReader(_stream, Encoding.UTF8, leaveOpen: true);
         _chunked = ChunkedStreamFactory.Create(_payload);
 
+        // V05/V06 differ by alignment only: the payload source pushes the payload
+        // behind a one-byte probe, so align 1 lands on offset 1 (unaligned) and
+        // align 64 on offset 64.
         _arenaTight = ArenaPayloadFactory.Create(_payload, alignment: 1);
         _arenaAlign64 = ArenaPayloadFactory.Create(_payload, alignment: 64);
         _carryArena = new Arena((nuint)(CarrySize + 64), defaultAlign: 16);
@@ -106,7 +109,12 @@ public class T1StreamBench
         return FrameStrategies.WithCarry(_chunked, _managedCarry, FrameCount);
     }
 
-    /// <summary>V08: chunked source, carry buffer in arena memory (Reset + bump per iteration).</summary>
+    /// <summary>
+    /// V08: chunked source, carry buffer in arena memory. Reset + bump hands back
+    /// the same pointer every iteration, so the arena costs nothing here by
+    /// design: the case exists to show that "no managed buffer" is enough, not
+    /// that an allocator can beat a reused one.
+    /// </summary>
     [Benchmark]
     public long V08_Carry_ArenaBuffer()
     {

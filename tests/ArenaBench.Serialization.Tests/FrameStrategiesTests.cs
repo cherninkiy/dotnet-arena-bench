@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+
 using ArenaBench.Core;
 
 using ArenaBench.Serialization.Core.Formats;
@@ -98,5 +100,17 @@ public sealed class FrameStrategiesTests
         using ChunkedStream chunked = ChunkedStreamFactory.Create(LittleEndian);
 
         Assert.Throws<ArgumentException>(() => FrameStrategies.WithCarry(chunked, new byte[16], 1));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(FrameFormat.MaxPayloadSize + 1)]
+    public void HeaderOutsideTheDeclaredRange_FailsFast(int payloadLength)
+    {
+        byte[] image = new byte[FrameFormat.HeaderSize];
+        BinaryPrimitives.WriteInt32LittleEndian(image, payloadLength);
+
+        Assert.Throws<InvalidDataException>(() =>
+            FrameFormat.TryGetFrameSize(image, ByteOrder.LittleEndian, out _, out _));
     }
 }

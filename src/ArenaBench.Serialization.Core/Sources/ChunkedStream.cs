@@ -65,8 +65,18 @@ public sealed class ChunkedStream : Stream
         _inner.Read(buffer[..Math.Min(buffer.Length, _maxChunk)]);
 
     /// <inheritdoc />
-    public override int Read(byte[] buffer, int offset, int count) =>
-        _inner.Read(buffer, offset, Math.Min(count, _maxChunk));
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+        if (buffer.Length - offset < count)
+        {
+            throw new ArgumentException("Offset and count exceed the buffer length.", nameof(count));
+        }
+
+        return _inner.Read(buffer, offset, Math.Min(count, _maxChunk));
+    }
 
     /// <inheritdoc />
     public override long Seek(long offset, SeekOrigin origin) => _inner.Seek(offset, origin);
