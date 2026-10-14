@@ -1,9 +1,14 @@
 # ADR-001: Arena Design
 
 **Статус:** Accepted
+
 **Дата:** 2026-10-13
+
 **Контекст:** dotnet-arena-bench, PoC-1 и PoC-2
-**Связанные документы:** [concept.md](../concept.md), [ADR-002: Native Side](ADR-002-native-side.md)
+
+**Связанные документы:**
+- [concept.md](../concept.md)
+- [ADR-002: Native Side](ADR-002-native-side.md)
 
 ---
 
