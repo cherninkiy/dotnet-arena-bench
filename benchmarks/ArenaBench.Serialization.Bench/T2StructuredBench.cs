@@ -18,6 +18,12 @@ namespace ArenaBench.Serialization.Bench;
 /// class reads exactly the same bytes. Each case returns the summed record
 /// fingerprint: results stay comparable across strategies and the JIT cannot
 /// drop the reads as dead code.
+/// <para>
+/// S01-S04 keep the source axis (MemoryStream, FileStream, NetworkStream,
+/// UnmanagedMemoryStream) and read the payload through a stream; S05-S09 keep
+/// the parsing axis and read a managed <c>byte[]</c>, so in each group the
+/// other axis is fixed.
+/// </para>
 /// </remarks>
 [MemoryDiagnoser]
 [ThreadingDiagnoser]
@@ -29,6 +35,7 @@ public abstract class T2StructuredBench<TFormat, TRecord>
     protected const int RecordCount = T2Payload.DefaultRecordCount;
 
     private byte[] _littleEndianPayload = null!;
+    private byte[] _bigEndianPayload = null!;
     private byte[] _scratch = null!;
 
     private MemoryStreamSource _memory = null!;
@@ -45,6 +52,7 @@ public abstract class T2StructuredBench<TFormat, TRecord>
     public void Setup()
     {
         _littleEndianPayload = T2Payload.Create<TFormat, TRecord>(RecordCount, ByteOrder.LittleEndian);
+        _bigEndianPayload = T2Payload.Create<TFormat, TRecord>(RecordCount, ByteOrder.BigEndian);
         _scratch = new byte[TFormat.SizeInBytes];
 
         _memory = MemoryStreamFactory.Create(_littleEndianPayload);
@@ -103,6 +111,31 @@ public abstract class T2StructuredBench<TFormat, TRecord>
         _unmanaged.Rewind();
         return T2Strategies.BinaryReader<TFormat, TRecord>(_unmanagedReader, RecordCount, _scratch);
     }
+
+    /// <summary>S05: BinaryPrimitives, explicit little endian, field by field.</summary>
+    [Benchmark]
+    public long S05_Span_BinaryPrimitives_LE() =>
+        T2Strategies.Primitives<TFormat, TRecord>(_littleEndianPayload, RecordCount, ByteOrder.LittleEndian);
+
+    /// <summary>S06: BinaryPrimitives, explicit big endian over the big-endian payload.</summary>
+    [Benchmark]
+    public long S06_Span_BinaryPrimitives_BE() =>
+        T2Strategies.Primitives<TFormat, TRecord>(_bigEndianPayload, RecordCount, ByteOrder.BigEndian);
+
+    /// <summary>S07: MemoryMarshal.Read, one typed struct copy per record.</summary>
+    [Benchmark]
+    public long S07_Span_MemoryMarshalRead() =>
+        T2Strategies.MemoryMarshalRead<TFormat, TRecord>(_littleEndianPayload, RecordCount);
+
+    /// <summary>S08: Unsafe.ReadUnaligned, one typed struct read per record without a copy.</summary>
+    [Benchmark]
+    public long S08_Span_UnsafeReadUnaligned() =>
+        T2Strategies.UnsafeReadUnaligned<TFormat, TRecord>(_littleEndianPayload, RecordCount);
+
+    /// <summary>S09: MemoryMarshal.Cast, the bulk struct view without per-record copies.</summary>
+    [Benchmark]
+    public long S09_Span_Cast() =>
+        T2Strategies.Cast<TFormat, TRecord>(_littleEndianPayload, RecordCount);
 }
 
 /// <summary>T2 cells for the 16 B service record.</summary>
