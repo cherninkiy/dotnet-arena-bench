@@ -9,5 +9,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ArenaBench.Core.Tests/ArenaBench.Core.Tests.csproj" />
+    <Project Path="tests/ArenaBench.Serialization.Tests/ArenaBench.Serialization.Tests.csproj" />
   </Folder>
 </Solution>
