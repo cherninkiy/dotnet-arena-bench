@@ -147,11 +147,13 @@ dotnet run -c Release --project benchmarks/ArenaBench.Allocator.Bench -- --job s
 ### Артефакты и ручной прогон
 
 Каждый прогон BenchmarkDotNet складывает отчёты по классам в
-`BenchmarkDotNet.Artifacts/results/` (`*-report-github.md`, `*.csv`, `*.html`)
-и логи в `BenchmarkDotNet.Artifacts/log/`. Каталог не коммитится
-(`.gitignore`); в CI он **загружается артефактом** `benchmarks-<os>`
-(хранение 14 дней, загружается даже если шаг с бенчем упал) — отчёт можно
-посмотреть и процитировать, не перезапуская прогон.
+`BenchmarkDotNet.Artifacts/results/` (`*-report-github.md`, `*.csv`, `*.html`),
+а логи (`*.log`) — в корне `BenchmarkDotNet.Artifacts/`. Каталог не коммитится
+(`.gitignore`); в CI он **загружается артефактом** целиком — `benchmarks-<os>`
+(хранение 14 дней, загружается даже если шаг с бенчем упал), поэтому отчёт
+можно посмотреть и процитировать, не перезапуская прогон. В CI каталог задан
+явно (`--artifacts "$GITHUB_WORKSPACE/BenchmarkDotNet.Artifacts"`), чтобы его
+расположение не зависело от рабочего каталога шага.
 
 Имена файлов — по классу бенчмарка, например
 `ArenaBench.Serialization.Bench.T2ServiceRecord16Bench-report-github.md`

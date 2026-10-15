@@ -62,10 +62,10 @@ jobs:
       POC2_FILTER: ${{ inputs.filter || '*' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup .NET 10
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.x'
 
@@ -79,12 +79,17 @@ jobs:
       # (ADR-002: no C toolchain involved). A manual run can ask for the full
       # profile or for a single series; push and pull_request always keep the
       # whole matrix and the defaults from `env`.
+      # `--artifacts` pins the report directory to the workspace: BDN resolves it
+      # against the current directory otherwise, and a bench step whose working
+      # directory differed from the upload step's would leave the run with no
+      # reports at all (that is what happened on the windows runner).
       - name: Bench - PoC-1 (Serialization)
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.os == 'all' || inputs.os == matrix.os }}
         run: >-
           dotnet run -c Release --project benchmarks/ArenaBench.Serialization.Bench --
           --job "$BENCH_JOB"
           --filter "$POC1_FILTER"
+          --artifacts "${{ github.workspace }}/BenchmarkDotNet.Artifacts"
 
       - name: Bench - PoC-2 (Allocator)
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.os == 'all' || inputs.os == matrix.os }}
@@ -92,17 +97,23 @@ jobs:
           dotnet run -c Release --project benchmarks/ArenaBench.Allocator.Bench --
           --job "$BENCH_JOB"
           --filter "$POC2_FILTER"
+          --artifacts "${{ github.workspace }}/BenchmarkDotNet.Artifacts"
+
+      # Printed before the upload, so the log always shows what the bench steps
+      # wrote - even when the upload has nothing to take.
+      - name: List the benchmark reports
+        if: always()
+        shell: bash
+        run: ls -la "${{ github.workspace }}/BenchmarkDotNet.Artifacts/results" || true
 
       # One report per benchmark class (md/csv/html) plus the BDN logs, so a run
       # can be inspected or cited in docs/*.md without re-running it. Uploaded
       # even when a bench step failed, which is exactly when it matters.
       - name: Upload benchmark artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: benchmarks-${{ matrix.os }}
-          path: |
-            BenchmarkDotNet.Artifacts/results
-            BenchmarkDotNet.Artifacts/log
+          path: ${{ github.workspace }}/BenchmarkDotNet.Artifacts
           if-no-files-found: warn
           retention-days: 14

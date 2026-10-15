@@ -272,8 +272,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.x'
       - run: dotnet build -c Release
@@ -281,6 +281,10 @@ jobs:
       - run: dotnet run -c Release --project benchmarks/ArenaBench.Serialization.Bench -- --job short
       - run: dotnet run -c Release --project benchmarks/ArenaBench.Allocator.Bench -- --job short
 ```
+
+Отчёты этих прогонов CI загружает артефактом (`benchmarks-<os>`), чтобы числа
+можно было посмотреть, не перезапуская бенчи; подробности — в
+[README](../README.md) и [poc-1-serialization.md](../poc-1-serialization.md).
 
 **Никаких** `apt-get install build-essential`, `brew install cmake`,
 `choco install visualstudio-build-tools`.
