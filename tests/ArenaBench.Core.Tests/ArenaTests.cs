@@ -236,4 +236,123 @@ public class ArenaTests
         using MemoryHandle handle = manager.Pin(0); // one-past-end of an empty view
         Assert.Equal((nint)pointer, (nint)handle.Pointer);
     }
+
+    [Fact]
+    public void CompositeType_UsesDefaultAlignAsItsContract()
+    {
+        // The BCL exposes no AlignOf<T> for composite unmanaged types
+        // (dotnet/runtime #2167), so defaultAlign IS their alignment contract: it has
+        // to cover the natural alignment the caller knows about, and this test pins
+        // the documented behavior down (whatever defaultAlign asks for is what the
+        // pointer gets). Primitives ignore a smaller defaultAlign - see
+        // PrimitiveAlign_WinsOverSmallerDefaultAlign.
+        using var arena16 = new Arena(1024, defaultAlign: 16);
+        using var arena64 = new Arena(1024, defaultAlign: 64);
+
+        Assert.Equal(0, (long)arena16.AllocPtr<Commodity32>(1) % 16);
+        Assert.Equal(0, (long)arena64.AllocPtr<Commodity32>(1) % 64);
+    }
+
+    [Fact]
+    public void Release_CurrentMark_IsANoOp()
+    {
+        // Boundary case: a mark equal to the current offset restores the same offset,
+        // so it is legal and does nothing.
+        using var arena = new Arena(1024);
+        _ = arena.AllocBytes(64, 16);
+        ArenaMark current = arena.Mark();
+
+        arena.Release(current);
+
+        Assert.Equal(64u, (uint)arena.UsedBytes);
+    }
+
+    [Fact]
+    public void Release_NewerMark_Throws()
+    {
+        // Out-of-order release (ADR-001 D4): after rolling back to an older mark, the
+        // newer one is ahead of the arena state and must be rejected.
+        using var arena = new Arena(1024);
+        _ = arena.AllocBytes(64, 16);
+        ArenaMark earlier = arena.Mark();
+        _ = arena.AllocBytes(64, 16);
+        ArenaMark newer = arena.Mark();
+
+        arena.Release(earlier);
+        Assert.Equal(64u, (uint)arena.UsedBytes);
+
+        Assert.Throws<ArgumentException>(() => arena.Release(newer));
+    }
+
+    [Fact]
+    public void Release_AfterReset_Throws()
+    {
+        // ArenaScope documents exactly this: a Reset between the mark and the release
+        // invalidates the mark, so the rollback fails instead of restoring an offset
+        // the arena no longer has.
+        using var arena = new Arena(1024);
+        _ = arena.AllocBytes(64, 16);
+        ArenaMark mark = arena.Mark();
+        _ = arena.AllocBytes(64, 16);
+        arena.Reset();
+
+        Assert.Throws<ArgumentException>(() => arena.Release(mark));
+        Assert.Equal(0u, (uint)arena.UsedBytes);
+    }
+
+    [Fact]
+    public void MemoryView_AfterReset_Throws()
+    {
+        // ADR-001 D9 with the generation check: the view is not silently stale, it
+        // fails loudly instead of reading memory that has been reissued.
+        using var arena = new Arena(1024);
+        Memory<int> view = arena.AllocMemory<int>(16);
+        view.Span[0] = 42; // valid before the reset
+
+        arena.Reset();
+
+        Assert.Throws<InvalidOperationException>(() => _ = view.Span);
+        Assert.Throws<InvalidOperationException>(() => view.Pin());
+    }
+
+    [Fact]
+    public void MemoryView_AfterDispose_Throws()
+    {
+        var arena = new Arena(1024);
+        Memory<int> view = arena.AllocMemory<int>(16);
+        arena.Dispose();
+
+        Assert.Throws<InvalidOperationException>(() => _ = view.Span);
+    }
+
+    [Fact]
+    public void MemoryView_WithoutOwner_CannotDetectStaleness()
+    {
+        // A view created from a bare pointer has nothing to compare against, so the
+        // old documented behavior (undefined behavior) stays for that case.
+        using var arena = new Arena(1024);
+        var manager = new ArenaMemoryManager<int>(arena.AllocPtr<int>(16), 16);
+
+        arena.Reset();
+
+        Assert.Equal(16, manager.GetSpan().Length);
+    }
+
+    [Fact]
+    public void ScopedReuse_KeepsTheGeneration()
+    {
+        // Mark/Release only rolls the offset back: the memory is not reissued, so a
+        // view that shares the arena with a scope stays valid. Only Reset/Dispose bump
+        // the generation.
+        using var arena = new Arena(1024);
+        Memory<int> view = arena.AllocMemory<int>(16);
+        uint generation = arena.Generation;
+
+        ArenaMark mark = arena.Mark();
+        _ = arena.AllocBytes(64, 16);
+        arena.Release(mark);
+
+        Assert.Equal(generation, arena.Generation);
+        Assert.Equal(16, view.Span.Length);
+    }
 }

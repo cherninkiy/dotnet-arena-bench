@@ -38,7 +38,7 @@ public sealed class ArenaBufferWriter : IBufferWriter<byte>, IDisposable
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(capacity);
 
-        _manager = new ArenaMemoryManager<byte>(arena.AllocPtr<byte>(capacity), capacity);
+        _manager = new ArenaMemoryManager<byte>(arena.AllocPtr<byte>(capacity), capacity, arena);
         _memory = _manager.Memory;
         _capacity = capacity;
     }

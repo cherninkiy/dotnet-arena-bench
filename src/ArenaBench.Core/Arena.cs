@@ -13,6 +13,7 @@ public sealed class Arena : IDisposable
     private readonly SafeArenaHandle _handle;
     private readonly int _defaultAlign;
     private nuint _offset;
+    private uint _generation;
     private bool _disposed;
 
     /// <summary>
@@ -54,6 +55,16 @@ public sealed class Arena : IDisposable
     /// <summary>Bytes left before overflow (ADR-001 D8: check before hot-path allocation).</summary>
     public nuint Free => _handle.Size - _offset;
 
+    /// <summary>
+    /// Bumped by <see cref="Reset"/> and <see cref="Dispose"/> (ADR-001 D9).
+    /// Views created through <see cref="AllocMemory{T}"/> remember the generation
+    /// they were created with and reject use afterwards, so a stale view fails
+    /// loudly instead of quietly reading memory that now belongs to another
+    /// allocation. Raw <see cref="Span{T}"/> and <see cref="IntPtr"/> keep the
+    /// documented undefined behavior: they cannot be checked.
+    /// </summary>
+    public uint Generation => _generation;
+
     /// <summary>Captures the current offset for a later <see cref="Release"/> (ADR-001 D4).</summary>
     public ArenaMark Mark() => new(_offset);
 
@@ -66,7 +77,12 @@ public sealed class Arena : IDisposable
     /// </summary>
     public ArenaScope Scope() => new(this, Mark());
 
-    /// <summary>Rolls the offset back to a previously captured mark (ADR-001 D4).</summary>
+    /// <summary>
+    /// Rolls the offset back to a previously captured mark (ADR-001 D4).
+    /// A mark equal to the current offset is a legal no-op; a mark that is newer
+    /// than the arena state (an out-of-order release, or a mark taken before a
+    /// <see cref="Reset"/>) throws <see cref="ArgumentException"/>.
+    /// </summary>
     public void Release(ArenaMark mark)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -80,13 +96,16 @@ public sealed class Arena : IDisposable
 
     /// <summary>
     /// Returns the offset to zero without freeing memory (ADR-001 D7: O(1)).
-    /// WARNING (ADR-001 D9): invalidates all previously issued
-    /// Memory/Span/IntPtr — using them afterwards is undefined behavior.
+    /// WARNING (ADR-001 D9): invalidates all previously issued Memory/Span/IntPtr.
+    /// <see cref="Memory{T}"/> views from <see cref="AllocMemory{T}"/> detect it
+    /// and throw <see cref="InvalidOperationException"/>; using a raw
+    /// <see cref="Span{T}"/> or <see cref="IntPtr"/> afterwards is undefined behavior.
     /// </summary>
     public void Reset()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _offset = 0;
+        _generation++;
     }
 
     /// <summary>
@@ -99,7 +118,12 @@ public sealed class Arena : IDisposable
     /// count 0 returns an empty span over a valid pointer, as the BCL does for
     /// zero-sized allocations; the alignment padding may still advance
     /// <see cref="UsedBytes"/>.
+    /// PRECONDITION for composite T: the arena cannot verify that defaultAlign
+    /// covers the natural alignment of T (no AlignOf API, dotnet/runtime #2167),
+    /// so an under-aligned defaultAlign is silently wrong for such a type - it is
+    /// a contract, not a runtime check.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Span<T> AllocSpan<T>(int count) where T : unmanaged
     {
         IntPtr pointer = AllocPtr<T>(count);
@@ -119,7 +143,9 @@ public sealed class Arena : IDisposable
     /// natural alignment of primitives) (ADR-001 D3); raw pointer variant.
     /// count 0 accepts no bytes and returns a valid pointer that must not be
     /// dereferenced (the BCL convention for zero-sized allocations).
+    /// Same composite-T precondition as <see cref="AllocSpan{T}"/>.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public IntPtr AllocPtr<T>(int count) where T : unmanaged
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -146,15 +172,17 @@ public sealed class Arena : IDisposable
     }
 
     /// <summary>
-    /// Allocates a <see cref="Memory{T}"/> view (ADR-001 D9): the memory manager is
-    /// created per allocation and is NOT tracked by the arena — Reset/Dispose
-    /// invalidates it (undefined behavior). count 0 yields an empty view whose
-    /// <c>Pin</c> is still valid.
+    /// Allocates a <see cref="Memory{T}"/> view (ADR-001 D9). The arena does not
+    /// track outstanding rentals, but the view validates the arena generation on
+    /// every access, so using it after <see cref="Reset"/>/<see cref="Dispose"/>
+    /// throws <see cref="InvalidOperationException"/> instead of reading memory
+    /// that has been reissued. count 0 yields an empty view whose <c>Pin</c> is
+    /// still valid.
     /// </summary>
     public Memory<T> AllocMemory<T>(int count) where T : unmanaged
     {
         IntPtr pointer = AllocPtr<T>(count);
-        return new ArenaMemoryManager<T>(pointer, count).Memory;
+        return new ArenaMemoryManager<T>(pointer, count, this).Memory;
     }
 
     /// <summary>
@@ -169,6 +197,7 @@ public sealed class Arena : IDisposable
         }
 
         _disposed = true;
+        _generation++;
         _handle.Dispose();
     }
 
@@ -200,6 +229,7 @@ public sealed class Arena : IDisposable
     private static unsafe Span<T> AsSpan<T>(IntPtr pointer, int count) where T : unmanaged
         => new(pointer.ToPointer(), count);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private IntPtr Allocate(nuint size, uint align)
     {
         nuint mask = align - 1;

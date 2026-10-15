@@ -65,9 +65,15 @@ PoC проверяет гипотезу: **arena поверх unmanaged-памя
 Нативная сторона — **без C-кода**: P/Invoke на libc
 (`memcpy`/`memset`/`memcmp`) и `[UnmanagedCallersOnly]`
 ([ADR-002](docs/adr/ADR-002-native-side.md)). Дизайн arena —
-[ADR-001](docs/adr/ADR-001-arena-design.md); предупреждение:
-`Reset()` / `Dispose()` арены инвалидирует ранее выданные
-`Memory<T>` / `Span<T>` / `IntPtr` (UB, ADR-001 D9).
+[ADR-001](docs/adr/ADR-001-arena-design.md).
+
+> ⚠️ **`Reset()` / `Dispose()` арены инвалидирует всё, что она выдала**
+> ([ADR-001 D9](docs/adr/ADR-001-arena-design.md)). `Memory<T>` из
+> `AllocMemory<T>` отлавливается (арена считает поколения, обращение к
+> протухшему виду бросает `InvalidOperationException`), а `Span<T>` и `IntPtr`
+> проверить нечем — их использование после `Reset`/`Dispose` остаётся
+> undefined behavior. `Mark`/`Release` память не переиспользует и виды не
+> инвалидирует.
 
 ## Что получится на выходе
 

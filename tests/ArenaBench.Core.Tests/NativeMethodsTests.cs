@@ -30,4 +30,29 @@ public class NativeMethodsTests
         Assert.NotEqual(0, NativeMethods.Memcmp(destination, source, 64));
         Assert.Equal(0xAB, Marshal.ReadByte(source, 63)); // source stays intact
     }
+
+    /// <summary>
+    /// The same round trip for tiny buffers: memcpy/memset/memcmp have to work for
+    /// sizes below a machine word too, and a platform where the export name is wrong
+    /// fails here rather than in the middle of a benchmark.
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(64)]
+    public void Memcpy_Memcmp_RoundTrip_ForSmallSizes(int size)
+    {
+        using var arena = new Arena(256);
+        IntPtr source = arena.AllocPtr<byte>(size);
+        IntPtr destination = arena.AllocPtr<byte>(size);
+
+        NativeMethods.Memset(source, 0x5A, (nuint)size);
+        NativeMethods.Memcpy(destination, source, (nuint)size);
+
+        Assert.Equal(0, NativeMethods.Memcmp(destination, source, (nuint)size));
+        Assert.Equal(0x5A, Marshal.ReadByte(destination, size - 1));
+
+        NativeMethods.Memset(destination, 0x00, (nuint)size);
+        Assert.NotEqual(0, NativeMethods.Memcmp(destination, source, (nuint)size));
+    }
 }

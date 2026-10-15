@@ -157,4 +157,21 @@ public sealed class ArenaPayloadTests
 
         Assert.Throws<InvalidOperationException>(() => arenaWriter.GetSpan(128));
     }
+
+    [Fact]
+    public void ArenaBufferWriter_AfterArenaReset_Throws()
+    {
+        // The writer's view belongs to its arena, and the arena now reports the
+        // generation it was created with: a Reset reissues the memory, so the writer
+        // must not hand out a stale buffer (ADR-001 D9).
+        using var arena = new Arena(4096);
+        using var arenaWriter = new ArenaBufferWriter(arena, 4096);
+        arenaWriter.GetSpan(16);
+        arenaWriter.Advance(16);
+
+        arena.Reset();
+
+        Assert.Throws<InvalidOperationException>(() => _ = arenaWriter.WrittenSpan);
+        Assert.Throws<InvalidOperationException>(() => arenaWriter.GetSpan(16));
+    }
 }

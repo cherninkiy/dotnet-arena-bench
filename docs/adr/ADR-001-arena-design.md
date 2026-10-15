@@ -291,8 +291,15 @@ void Release(ArenaMark mark);
   чем арена.
 - `Reset()` / `Dispose()` инвалидируют все ранее выданные
   `Memory<T>` / `Span<T>` / `IntPtr`.
-- Использование после `Reset` — **undefined behavior**
-  (не exception, не падение — просто мусор).
+- Использование `Span<T>` / `IntPtr` после `Reset` — **undefined behavior**
+  (не exception, не падение — просто мусор): проверить их нечем.
+- `Memory<T>` (то есть `AllocMemory<T>` / `ArenaMemoryManager`) проверяется:
+  арена ведёт счётчик поколений, вид помнит своё, и обращение к «протухшему»
+  виду бросает `InvalidOperationException`. Проверка — одно сравнение поля на
+  *обращение к виду*, а не на элемент, поэтому в измеряемый внутренний цикл она
+  не попадает.
+- Вид, созданный из «голого» указателя (`ArenaMemoryManager(ptr, count)` без
+  владельца), сравнивать не с чем — для него остаётся прежнее UB.
 
 **Обоснование:**
 - Отслеживание активных аренд ломает zero-overhead цель arena.
@@ -303,9 +310,12 @@ void Release(ArenaMark mark);
 
 **Последствия:**
 - Документировать в XML-комментариях `Arena.Reset` и `Arena.Dispose`.
-- Тесты проверяют: `Reset` без активных `Memory<T>` — ок;
-  `Reset` с активными `Memory<T>` — не тестируется (UB).
-- В README и concept — предупреждение для пользователя.
+- Тесты проверяют: `Reset` без активных `Memory<T>` — ок; обращение к
+  `Memory<T>`-виду после `Reset`/`Dispose` — `InvalidOperationException`;
+  `Mark`/`Release` поколение не меняет (scoped-переиспользование остаётся
+  валидным); вид без владельца — прежнее UB.
+- В README и concept — предупреждение для пользователя: `Memory<T>`
+  отлавливается, `Span<T>`/`IntPtr` — нет.
 
 ---
 
