@@ -153,6 +153,16 @@ dotnet run -c Release --project benchmarks/ArenaBench.Allocator.Bench -- --job s
 (хранение 14 дней, загружается даже если шаг с бенчем упал) — отчёт можно
 посмотреть и процитировать, не перезапуская прогон.
 
+Имена файлов — по классу бенчмарка, например
+`ArenaBench.Serialization.Bench.T2ServiceRecord16Bench-report-github.md`
+(таблицу из такого файла можно вставлять в `docs/*.md` как есть). Забрать
+артефакты конкретного прогона:
+
+```bash
+gh run list --workflow ci.yml
+gh run download <run-id> -n benchmarks-ubuntu-latest
+```
+
 Ручной запуск: **Actions → ci → Run workflow** со входными параметрами:
 
 | Параметр | Значения | Зачем |

@@ -87,6 +87,29 @@ dotnet run -c Release --project benchmarks/ArenaBench.Serialization.Bench -- --f
 Отчёты каждого класса BDN складывает в
 `BenchmarkDotNet.Artifacts/results/*-report-github.md`.
 
+### Требования к сопоставимому прогону
+
+Числа в таблицах выше сняты `--job short`; для финальных таблиц нужен полный
+профиль на машине, где больше ничего не работает:
+
+1. Закрыть фоновые процессы (браузер, индексаторы, обновления, анализ в IDE), не
+   запускать параллельно другие бенчмарки и сборки.
+2. Зафиксировать питание и частоты: Windows — схема «Высокая производительность»
+   (BDN переключает её сам) и выключенный Turbo Boost; Linux —
+   `cpupower frequency-set -g performance` и, при желании максимальной
+   стабильности, отключённый `intel_pstate` turbo.
+3. Гонять серии по одной (`--filter *T2*`, `--filter *T1StreamBench*`, …), а не всё
+   сразу: длинный прогон накапливает тепловой троттлинг и портит хвост таблицы.
+4. Сохранять окружение из шапки отчёта BDN (CPU, JIT, SDK) вместе с числами —
+   оно уже попадает в каждый `*-report-github.md`.
+5. PMU-метрики (cache-misses, branch-misses) собираются **только на Linux**:
+   `perf stat -e cache-misses,cache-references,branch-misses,branch-instructions dotnet run …`;
+   на Windows это ETW/WPR и заметно дороже в настройке
+   ([backlog](backlog.md) B-003).
+6. GC pause и pinning time в этот прогон не входят — это
+   [backlog](backlog.md) B-001/B-002; RSS/working set снимается отдельно
+   (`dotnet-counters`).
+
 ## 4. Ограничения прогона
 
 - `--job short` — мало итераций: разброс по быстрым кейсам (десятки–сотни нс)

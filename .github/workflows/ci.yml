@@ -40,6 +40,10 @@ jobs:
   build:
     name: build-test-bench (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Default is 360 minutes. 120 is plenty for the smoke path and still leaves room
+    # for a manual full-profile run on a 2-core runner - BDN has no global timeout of
+    # its own, so without this a hung benchmark would burn the default.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
