@@ -1,0 +1,119 @@
+name: ci
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+  # Manual run from the Actions tab: choose the BenchmarkDotNet job, an optional
+  # filter and (for long profiles) a single runner instead of the matrix.
+  # Artifacts are uploaded for every run, manual or not.
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'BenchmarkDotNet job'
+        required: true
+        default: short
+        type: choice
+        options:
+          - short
+          - default
+          - dry
+      filter:
+        description: 'BDN --filter glob: * = all (default), *T2*, *T1StreamBench*; empty falls back to the CI smoke subset'
+        required: false
+        default: '*'
+        type: string
+      os:
+        description: 'Runner(s): all, or one label - a long profile is cheaper on a single runner'
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
+jobs:
+  build:
+    name: build-test-bench (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # Default is 360 minutes. 120 is plenty for the smoke path and still leaves room
+    # for a manual full-profile run on a 2-core runner - BDN has no global timeout of
+    # its own, so without this a hung benchmark would burn the default.
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      # Bench defaults live here, in one place. A push/pull_request smoke runs one
+      # representative PoC-1 class - T2ServiceRecord16Bench covers every source and
+      # every strategy (S01-S20) on the 16 B record - which keeps the bench steps
+      # near three minutes per runner; the other series (T1, T3, the remaining T2
+      # sizes) are started by hand, where `filter` defaults to the whole set. PoC-2
+      # has four cases, so CI always runs it in full.
+      # They are read as shell variables, not interpolated into the script, so a
+      # filter string can never be re-interpreted as shell code.
+      BENCH_JOB: ${{ inputs.job || 'short' }}
+      POC1_FILTER: ${{ inputs.filter || '*T2ServiceRecord16Bench*' }}
+      POC2_FILTER: ${{ inputs.filter || '*' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.x'
+
+      - name: Build
+        run: dotnet build -c Release
+
+      - name: Test
+        run: dotnet test -c Release
+
+      # The short bench is a regression smoke run, not a metrics collection
+      # (ADR-002: no C toolchain involved). A manual run can ask for the full
+      # profile or for a single series; push and pull_request always keep the
+      # whole matrix and the defaults from `env`.
+      # `--artifacts` pins the report directory to the workspace: BDN resolves it
+      # against the current directory otherwise, and a bench step whose working
+      # directory differed from the upload step's would leave the run with no
+      # reports at all (that is what happened on the windows runner).
+      - name: Bench - PoC-1 (Serialization)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.os == 'all' || inputs.os == matrix.os }}
+        run: >-
+          dotnet run -c Release --project benchmarks/ArenaBench.Serialization.Bench --
+          --job "$BENCH_JOB"
+          --filter "$POC1_FILTER"
+          --artifacts "${{ github.workspace }}/BenchmarkDotNet.Artifacts"
+
+      - name: Bench - PoC-2 (Allocator)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.os == 'all' || inputs.os == matrix.os }}
+        run: >-
+          dotnet run -c Release --project benchmarks/ArenaBench.Allocator.Bench --
+          --job "$BENCH_JOB"
+          --filter "$POC2_FILTER"
+          --artifacts "${{ github.workspace }}/BenchmarkDotNet.Artifacts"
+
+      # Printed before the upload, so the log always shows what the bench steps
+      # wrote - even when the upload has nothing to take.
+      - name: List the benchmark reports
+        if: always()
+        shell: bash
+        run: ls -la "${{ github.workspace }}/BenchmarkDotNet.Artifacts/results" || true
+
+      # One report per benchmark class (md/csv/html) plus the BDN logs, so a run
+      # can be inspected or cited in docs/*.md without re-running it. Uploaded
+      # even when a bench step failed, which is exactly when it matters.
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: benchmarks-${{ matrix.os }}
+          path: ${{ github.workspace }}/BenchmarkDotNet.Artifacts
+          if-no-files-found: warn
+          retention-days: 14
