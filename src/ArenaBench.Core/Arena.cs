@@ -10,8 +10,28 @@ namespace ArenaBench.Core;
 /// </summary>
 public sealed class Arena : IDisposable
 {
+    private static int s_nextId;
+
     private readonly SafeArenaHandle _handle;
     private readonly int _defaultAlign;
+
+    // Identity of this arena, handed to every mark it issues. Without it a mark
+    // from another arena looks perfectly valid here (generations of two arenas
+    // coincide, the offset is in range) and would roll back an unrelated block.
+    /// <summary>
+    /// Identity of the arena, handed to every mark it issues. With it a mark from
+    /// another arena is rejected by <see cref="Release"/>.
+    /// <para>
+    /// BOUND: the id comes from a process-wide <see cref="Interlocked.Increment(ref int)"/>
+    /// counter and wraps at <see cref="int.MaxValue"/>, so two arenas could share an
+    /// id after ~2.1 billion creations in one process. A stale mark is then rejected
+    /// only if its generation or offset no longer fit - the id alone would not tell
+    /// the two apart. Unreachable for a solver process; a long-lived service that
+    /// creates arenas forever needs a 64-bit id (and a 24-byte
+    /// <see cref="ArenaMark"/> instead of 16).
+    /// </para>
+    /// </summary>
+    private readonly int _id;
     private nuint _offset;
     private uint _generation;
     private bool _disposed;
@@ -28,6 +48,7 @@ public sealed class Arena : IDisposable
     public Arena(nuint size, int defaultAlign = 16)
     {
         ValidateAlign(defaultAlign);
+        _id = Interlocked.Increment(ref s_nextId);
         _handle = new SafeArenaHandle(size, ownsMemory: true);
         _defaultAlign = defaultAlign;
     }
@@ -42,6 +63,7 @@ public sealed class Arena : IDisposable
     {
         ValidateAlign(defaultAlign);
         ArgumentOutOfRangeException.ThrowIfEqual(memory, IntPtr.Zero);
+        _id = Interlocked.Increment(ref s_nextId);
         _handle = new SafeArenaHandle(memory, size, ownsMemory);
         _defaultAlign = defaultAlign;
     }
@@ -65,8 +87,11 @@ public sealed class Arena : IDisposable
     /// </summary>
     public uint Generation => _generation;
 
-    /// <summary>Captures the current offset for a later <see cref="Release"/> (ADR-001 D4).</summary>
-    public ArenaMark Mark() => new(_offset);
+    /// <summary>
+    /// Captures the current offset together with the generation and the identity
+    /// of this arena, for a later <see cref="Release"/> (ADR-001 D4).
+    /// </summary>
+    public ArenaMark Mark() => new(_offset, _generation, _id);
 
     /// <summary>
     /// RAII scope over <see cref="Mark"/>/<see cref="Release"/> (ADR-001 D4):
@@ -79,16 +104,40 @@ public sealed class Arena : IDisposable
 
     /// <summary>
     /// Rolls the offset back to a previously captured mark (ADR-001 D4).
-    /// A mark equal to the current offset is a legal no-op; a mark that is newer
-    /// than the arena state (an out-of-order release, or a mark taken before a
-    /// <see cref="Reset"/>) throws <see cref="ArgumentException"/>.
+    /// A mark equal to the current offset is a legal no-op. Everything else is
+    /// rejected with <see cref="ArgumentException"/>: a mark that is newer than
+    /// the arena state (out-of-order release), a mark taken before a
+    /// <see cref="Reset"/> of this arena, and a mark taken in a different arena.
+    /// The last two would otherwise move the offset back over memory that has
+    /// already been reissued - the ADR-001 D9 corruption the generation counter
+    /// exists to catch. The three cases stay <see cref="ArgumentException"/> (the
+    /// mark is the argument that does not fit the current state), and the message
+    /// carries both sides of the comparison - arena id, generation, offset - so a
+    /// single log line is enough to tell them apart.
     /// </summary>
     public void Release(ArenaMark mark)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (mark.ArenaId != _id)
+        {
+            throw new ArgumentException(
+                $"Mark belongs to arena {mark.ArenaId:X8} while this arena is {_id:X8}: releasing it here would roll back an unrelated block.",
+                nameof(mark));
+        }
+
+        if (mark.Generation != _generation)
+        {
+            throw new ArgumentException(
+                $"Mark was taken in generation {mark.Generation} while the arena is in generation {_generation}: it points at memory that a Reset has already reissued.",
+                nameof(mark));
+        }
+
         if (mark.Offset > _offset)
         {
-            throw new ArgumentException("Mark is newer than the current arena state.", nameof(mark));
+            throw new ArgumentException(
+                $"Mark offset {mark.Offset} is beyond the current offset {_offset}: marks are released in reverse order of allocation.",
+                nameof(mark));
         }
 
         _offset = mark.Offset;
@@ -255,6 +304,10 @@ public sealed class Arena : IDisposable
                 + $"size is {_handle.Size}.");
         }
 
+        // The pointer arithmetic runs in nint. On a 32-bit process the cast would
+        // wrap for an offset above nint.MaxValue, but such a block cannot be
+        // reserved there in the first place, so the 64-bit path is the only
+        // reachable one.
         _offset = alignedOffset + size;
         return (IntPtr)((nint)_handle.BasePointer + (nint)alignedOffset);
     }

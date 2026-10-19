@@ -26,6 +26,11 @@ internal sealed class SafeArenaHandle : SafeHandle
     public SafeArenaHandle(IntPtr memory, nuint size, bool ownsMemory)
         : base(IntPtr.Zero, ownsHandle: true)
     {
+        // A zero handle makes IsInvalid true, so ReleaseHandle would never run -
+        // and the live count incremented below would never be decremented. The
+        // public Arena constructor checks this too; the guard belongs here as
+        // well, because the type is visible to the tests.
+        ArgumentOutOfRangeException.ThrowIfEqual(memory, IntPtr.Zero);
         _ownsMemory = ownsMemory;
         Size = size;
         SetHandle(memory);

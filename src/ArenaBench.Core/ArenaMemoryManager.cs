@@ -18,6 +18,12 @@ namespace ArenaBench.Core;
 /// element - so it stays off the measured inner loop.
 /// </para>
 /// count 0 is legal and describes an empty view.
+/// <para>
+/// The pointer guard is unconditional: a null pointer is rejected even for
+/// count 0. An arena never produces that pair - a zero-sized allocation still
+/// returns the base pointer - and keeping the check loud is cheaper than
+/// deciding per call whether a null pointer would be benign.
+/// </para>
 /// </summary>
 public sealed unsafe class ArenaMemoryManager<T> : MemoryManager<T> where T : unmanaged
 {

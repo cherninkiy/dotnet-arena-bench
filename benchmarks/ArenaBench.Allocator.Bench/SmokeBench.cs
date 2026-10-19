@@ -5,9 +5,11 @@ using BenchmarkDotNet.Attributes;
 namespace ArenaBench.Allocator.Bench;
 
 /// <summary>
-/// Day-0 smoke benchmark: verifies the BenchmarkDotNet setup and the
-/// arena skeleton (ADR-001). Replaced by the A/E/I/M-series on Days 3–4
-/// (concept.md, День 3–4).
+/// Day-0 smoke benchmark, kept as the CI smoke target (concept.md 7.4): four
+/// cases that walk every arena lifetime shape - rent, reset, mark/release,
+/// create/dispose - against the ArrayPool baseline. The A/B/E series of Days 3-4
+/// measure the same shapes in full; a push or a pull request runs this class
+/// instead of the whole matrix, which keeps the bench step near three minutes.
 ///
 /// The arena lives across iterations ([GlobalSetup]/[GlobalCleanup]) so that
 /// the comparison with the pooled ArrayPool variant is apples-to-apples
