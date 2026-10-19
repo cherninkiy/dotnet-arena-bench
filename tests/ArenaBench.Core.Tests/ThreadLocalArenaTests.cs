@@ -111,4 +111,31 @@ public class ThreadLocalArenaTests
         Assert.Equal(512u, (uint)main.UsedBytes);
     }
 
+    [Fact]
+    public void Dispose_FreesTheArenasOfManyShortLivedThreads()
+    {
+        const int threads = 1000;
+        int baseline = LeakProbe.LiveCount();
+
+        ThreadLocalArena arenas = new(512);
+
+        for (int i = 0; i < threads; i++)
+        {
+            Thread thread = new(() => _ = arenas.Current);
+            thread.Start();
+            thread.Join();
+        }
+
+        // One arena per thread, held by the wrapper's own registry - that is what
+        // makes the arenas of threads that have already exited reachable at all.
+        Assert.Equal(threads, arenas.LiveArenaCount);
+        Assert.Equal(baseline + threads, SafeArenaHandle.LiveCount);
+
+        arenas.Dispose();
+
+        // Every one of them is freed outright (none is left to the finalizer), and
+        // the registry drops its references as it goes.
+        Assert.Equal(baseline, SafeArenaHandle.LiveCount);
+        Assert.Equal(0, arenas.LiveArenaCount);
+    }
 }

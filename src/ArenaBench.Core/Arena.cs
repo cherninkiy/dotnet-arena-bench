@@ -97,7 +97,10 @@ public sealed class Arena : IDisposable
     /// <see cref="Reset"/> of this arena, and a mark taken in a different arena.
     /// The last two would otherwise move the offset back over memory that has
     /// already been reissued - the ADR-001 D9 corruption the generation counter
-    /// exists to catch.
+    /// exists to catch. The three cases stay <see cref="ArgumentException"/> (the
+    /// mark is the argument that does not fit the current state), and the message
+    /// carries both sides of the comparison - arena id, generation, offset - so a
+    /// single log line is enough to tell them apart.
     /// </summary>
     public void Release(ArenaMark mark)
     {
@@ -106,20 +109,22 @@ public sealed class Arena : IDisposable
         if (mark.ArenaId != _id)
         {
             throw new ArgumentException(
-                "Mark belongs to a different arena: releasing it here would roll back an unrelated block.",
+                $"Mark belongs to arena {mark.ArenaId:X8} while this arena is {_id:X8}: releasing it here would roll back an unrelated block.",
                 nameof(mark));
         }
 
         if (mark.Generation != _generation)
         {
             throw new ArgumentException(
-                "Mark was taken before the arena was reset: the memory it points at has been reissued.",
+                $"Mark was taken in generation {mark.Generation} while the arena is in generation {_generation}: it points at memory that a Reset has already reissued.",
                 nameof(mark));
         }
 
         if (mark.Offset > _offset)
         {
-            throw new ArgumentException("Mark is newer than the current arena state.", nameof(mark));
+            throw new ArgumentException(
+                $"Mark offset {mark.Offset} is beyond the current offset {_offset}: marks are released in reverse order of allocation.",
+                nameof(mark));
         }
 
         _offset = mark.Offset;
