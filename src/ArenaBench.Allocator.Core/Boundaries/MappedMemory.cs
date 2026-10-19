@@ -26,7 +26,18 @@ public sealed unsafe class MappedMemory : IDisposable
         _accessor = _file.CreateViewAccessor(0, size, MemoryMappedFileAccess.ReadWrite);
 
         byte* pointer = null;
-        _accessor.SafeMemoryMappedViewHandle.AcquirePointer(ref pointer);
+        try
+        {
+            _accessor.SafeMemoryMappedViewHandle.AcquirePointer(ref pointer);
+        }
+        catch
+        {
+            // A half-built owner must not leave the mapping behind.
+            _accessor.Dispose();
+            _file.Dispose();
+            throw;
+        }
+
         // The view can start at an offset inside the mapping; the accessor knows it.
         _pointer = pointer + _accessor.PointerOffset;
         Size = size;
@@ -57,9 +68,17 @@ public sealed unsafe class MappedMemory : IDisposable
         }
 
         _disposed = true;
-        _accessor.SafeMemoryMappedViewHandle.ReleasePointer();
-        _accessor.Dispose();
-        _file.Dispose();
-        _pointer = null;
+        try
+        {
+            _accessor.SafeMemoryMappedViewHandle.ReleasePointer();
+        }
+        finally
+        {
+            // Leaking the view or the file because the pointer release failed would
+            // be worse than the exception: the mapping lives until the process ends.
+            _accessor.Dispose();
+            _file.Dispose();
+            _pointer = null;
+        }
     }
 }

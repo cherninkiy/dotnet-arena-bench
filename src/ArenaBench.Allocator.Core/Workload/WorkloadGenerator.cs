@@ -77,6 +77,14 @@ public sealed class MixedWorkload
     /// <summary>Room for the arena's own alignment padding, on top of the exact byte counts.</summary>
     private const nuint AlignmentSlack = 256;
 
+    /// <summary>
+    /// Alignment every M-case arena is created with. <see cref="ArenaBytesFor"/>
+    /// and <see cref="TotalArenaBytes"/> pad each item to this value, so the
+    /// benchmark has to create its arenas with the same one: change both together,
+    /// otherwise the reported size under-counts the padding and the arena overflows.
+    /// </summary>
+    public const int ArenaAlign = 16;
+
     private readonly CommodityType[] _schedule;
     private readonly byte[] _voice;
     private readonly byte[] _service;
@@ -143,5 +151,8 @@ public sealed class MixedWorkload
     }
 
     private static nuint Padded(int count, int itemBytes)
-        => (nuint)count * (nuint)(((itemBytes + 15) / 16) * 16);
+    {
+        int step = (itemBytes + ArenaAlign - 1) / ArenaAlign * ArenaAlign;
+        return (nuint)count * (nuint)step;
+    }
 }

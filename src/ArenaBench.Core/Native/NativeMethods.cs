@@ -42,9 +42,9 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(LibcResolver.WindowsCrt, EntryPoint = "memcmp", SetLastError = false)]
     private static partial int MemcmpWin(IntPtr lhs, IntPtr rhs, nuint byteCount);
 
-    private static readonly delegate* managed<IntPtr, IntPtr, nuint, void> s_memcpy = SelectMemcpy();
-    private static readonly delegate* managed<IntPtr, int, nuint, void> s_memset = SelectMemset();
-    private static readonly delegate* managed<IntPtr, IntPtr, nuint, int> s_memcmp = SelectMemcmp();
+    private static readonly delegate* managed<IntPtr, IntPtr, nuint, void> s_memcpy;
+    private static readonly delegate* managed<IntPtr, int, nuint, void> s_memset;
+    private static readonly delegate* managed<IntPtr, IntPtr, nuint, int> s_memcmp;
 
     /// <summary>Native reads from our memory: memcpy (ADR-002 D2).</summary>
     public static void Memcpy(IntPtr destination, IntPtr source, nuint byteCount)
@@ -77,18 +77,29 @@ internal static unsafe partial class NativeMethods
         => s_rawMemcmp(lhs, rhs, byteCount);
 
     // Loaded once and kept for the process lifetime: the raw path exists to be
-    // measured, not to manage handles. Declaration order matters - the pointer
-    // initializers below call ResolveExport, which needs the handle.
-    private static readonly IntPtr s_library = NativeLibrary.Load(LibraryName());
+    // measured, not to manage handles.
+    private static readonly IntPtr s_library;
+    private static readonly delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, void> s_rawMemcpy;
+    private static readonly delegate* unmanaged[Cdecl]<IntPtr, int, nuint, void> s_rawMemset;
+    private static readonly delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, int> s_rawMemcmp;
 
-    private static readonly delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, void> s_rawMemcpy =
-        (delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, void>)ResolveExport("memcpy");
-
-    private static readonly delegate* unmanaged[Cdecl]<IntPtr, int, nuint, void> s_rawMemset =
-        (delegate* unmanaged[Cdecl]<IntPtr, int, nuint, void>)ResolveExport("memset");
-
-    private static readonly delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, int> s_rawMemcmp =
-        (delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, int>)ResolveExport("memcmp");
+    /// <summary>
+    /// Resolves everything in one explicit order. Field initializers would depend
+    /// on their declaration order (the raw pointers need the library handle), and
+    /// a reordered field would turn a refactoring slip into a
+    /// <see cref="TypeInitializationException"/> on the first call instead of a
+    /// visible dependency here.
+    /// </summary>
+    static NativeMethods()
+    {
+        s_library = NativeLibrary.Load(LibraryName());
+        s_rawMemcpy = (delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, void>)ResolveExport("memcpy");
+        s_rawMemset = (delegate* unmanaged[Cdecl]<IntPtr, int, nuint, void>)ResolveExport("memset");
+        s_rawMemcmp = (delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, int>)ResolveExport("memcmp");
+        s_memcpy = SelectMemcpy();
+        s_memset = SelectMemset();
+        s_memcmp = SelectMemcmp();
+    }
 
     private static string LibraryName()
         => LibcResolver.IsWindows ? LibcResolver.WindowsCrt

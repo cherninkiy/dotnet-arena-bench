@@ -315,7 +315,9 @@ public class AllocChurnBench
     /// <summary>
     /// A03: one <c>stackalloc</c> block, records sliced out of it. stackalloc has
     /// no free - the space stays taken until the method returns - so this is the
-    /// cheapest possible bump, and the reason A03 keeps the record count small.
+    /// cheapest possible bump. The parameters cap the frame at 256 x 256 B = 64 KiB,
+    /// comfortably inside the default 1 MB stack; raising them needs a bigger
+    /// stack, not just a wider parameter set.
     /// </summary>
     [Benchmark]
     public long StackAlloc_SingleBlock()

@@ -41,7 +41,7 @@ public sealed unsafe class ArenaGraph : IDisposable
         _capacitiesLength = graph.Capacities.Length;
         _costsLength = graph.Costs.Length;
 
-        _arena = new Arena((nuint)(RequiredBytes(graph) + PaddingSlack), defaultAlign: 16);
+        _arena = new Arena((nuint)RequiredBytesWithPadding(graph), defaultAlign: 16);
         _offsets = _arena.AllocPtr<int>(_offsetsLength);
         _targets = _arena.AllocPtr<int>(_targetsLength);
         _capacities = _arena.AllocPtr<float>(_capacitiesLength);
@@ -73,6 +73,13 @@ public sealed unsafe class ArenaGraph : IDisposable
             + (graph.Capacities.Length * sizeof(float))
             + (graph.Costs.Length * sizeof(float));
     }
+
+    /// <summary>
+    /// Bytes the copy needs including the alignment padding of its four
+    /// allocations. Size an arena with this one: <see cref="RequiredBytes"/> is the
+    /// payload alone, and an arena of exactly that size overflows on the last array.
+    /// </summary>
+    public static int RequiredBytesWithPadding(CsrGraph graph) => RequiredBytes(graph) + PaddingSlack;
 
     /// <inheritdoc />
     public void Dispose() => _arena.Dispose();

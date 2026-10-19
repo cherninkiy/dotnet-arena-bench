@@ -17,13 +17,25 @@ public static class NativeCallbackScenarios
         return handle(data, size);
     }
 
-    /// <summary>I05: <paramref name="calls"/> invocations over equal windows of the buffer.</summary>
+    /// <summary>
+    /// I05: <paramref name="calls"/> invocations over equal windows of the buffer.
+    /// When there are more calls than bytes the windows are narrowed instead of
+    /// emptied: 32 B with 64 calls becomes 32 one-byte windows, not 64 empty ones,
+    /// so the case still reads the whole buffer (and never past it).
+    /// </summary>
     public static unsafe long InvokeRepeatedly(IntPtr data, int size, int calls)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(calls);
+        if (calls == 0)
+        {
+            return 0;
+        }
+
         delegate* unmanaged[Cdecl]<IntPtr, int, int> handle = ManagedCallbacks.ChecksumPointer;
-        int window = size / calls;
+        int effectiveCalls = Math.Min(calls, Math.Max(size, 1));
+        int window = size / effectiveCalls;
         long sum = 0;
-        for (int call = 0; call < calls; call++)
+        for (int call = 0; call < effectiveCalls; call++)
         {
             sum += handle(IntPtr.Add(data, call * window), window);
         }

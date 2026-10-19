@@ -286,6 +286,10 @@ public sealed class Arena : IDisposable
                 + $"size is {_handle.Size}.");
         }
 
+        // The pointer arithmetic runs in nint. On a 32-bit process the cast would
+        // wrap for an offset above nint.MaxValue, but such a block cannot be
+        // reserved there in the first place, so the 64-bit path is the only
+        // reachable one.
         _offset = alignedOffset + size;
         return (IntPtr)((nint)_handle.BasePointer + (nint)alignedOffset);
     }

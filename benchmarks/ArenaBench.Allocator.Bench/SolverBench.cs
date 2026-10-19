@@ -41,7 +41,7 @@ public class SolverCsrBench
     {
         _graph = CsrGraph.CreateRandom(NodeCount);
         _arenaGraph = new ArenaGraph(_graph);
-        _buildArena = new Arena((nuint)ArenaGraph.RequiredBytes(_graph) + 4096);
+        _buildArena = new Arena((nuint)ArenaGraph.RequiredBytesWithPadding(_graph));
 
         _offsets = new int[_graph.Offsets.Length];
         _targets = new int[_graph.Targets.Length];

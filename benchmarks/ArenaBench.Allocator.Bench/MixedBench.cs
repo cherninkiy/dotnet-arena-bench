@@ -45,16 +45,23 @@ public class MixedBench
         // Per-type arenas are sized for their own type; the shared one holds the
         // whole schedule. Both get the same slack, so the comparison is about the
         // layout, not about who has room to spare.
-        _voice = new Arena(_balanced.ArenaBytesFor(CommodityType.Voice));
-        _service = new Arena(_balanced.ArenaBytesFor(CommodityType.Service));
-        _text = new Arena(_balanced.ArenaBytesFor(CommodityType.Text));
-        _shared = new Arena(_balanced.TotalArenaBytes());
+        _voice = CreateArena(_balanced.ArenaBytesFor(CommodityType.Voice));
+        _service = CreateArena(_balanced.ArenaBytesFor(CommodityType.Service));
+        _text = CreateArena(_balanced.ArenaBytesFor(CommodityType.Text));
+        _shared = CreateArena(_balanced.TotalArenaBytes());
 
-        _voiceSkewed = new Arena(_skewed.ArenaBytesFor(CommodityType.Voice));
-        _serviceSkewed = new Arena(_skewed.ArenaBytesFor(CommodityType.Service));
-        _textSkewed = new Arena(_skewed.ArenaBytesFor(CommodityType.Text));
-        _sharedSkewed = new Arena(_skewed.TotalArenaBytes());
+        _voiceSkewed = CreateArena(_skewed.ArenaBytesFor(CommodityType.Voice));
+        _serviceSkewed = CreateArena(_skewed.ArenaBytesFor(CommodityType.Service));
+        _textSkewed = CreateArena(_skewed.ArenaBytesFor(CommodityType.Text));
+        _sharedSkewed = CreateArena(_skewed.TotalArenaBytes());
     }
+
+    /// <summary>
+    /// Every arena here is created with <see cref="MixedWorkload.ArenaAlign"/>: the
+    /// byte counts the workload reports are padded to that alignment, so the two
+    /// have to move together.
+    /// </summary>
+    private static Arena CreateArena(nuint size) => new(size, MixedWorkload.ArenaAlign);
 
     [GlobalCleanup]
     public void Cleanup()
