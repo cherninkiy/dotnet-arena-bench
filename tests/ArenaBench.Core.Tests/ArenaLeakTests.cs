@@ -14,13 +14,11 @@ public class ArenaLeakTests
     [Fact]
     public void ForgottenDispose_IsReclaimedBySafeHandleFinalizer()
     {
-        CollectAndWaitForFinalizers();
-        int baseline = SafeArenaHandle.LiveCount;
+        int baseline = LeakProbe.LiveCount();
 
         CreateUndisposedArenas(500);
 
-        CollectAndWaitForFinalizers();
-        Assert.Equal(baseline, SafeArenaHandle.LiveCount);
+        Assert.Equal(baseline, LeakProbe.LiveCount());
     }
 
     // Deliberately not inlined: the allocating frame must be gone before the
@@ -38,24 +36,13 @@ public class ArenaLeakTests
     [Fact]
     public void Dispose_DecrementsLiveHandleCount()
     {
-        CollectAndWaitForFinalizers();
-        int baseline = SafeArenaHandle.LiveCount;
+        int baseline = LeakProbe.LiveCount();
 
         for (int i = 0; i < 100; i++)
         {
             using var arena = new Arena(256);
         }
 
-        CollectAndWaitForFinalizers();
-        Assert.Equal(baseline, SafeArenaHandle.LiveCount);
-    }
-
-    private static void CollectAndWaitForFinalizers(int attempts = 20)
-    {
-        for (int attempt = 0; attempt < attempts; attempt++)
-        {
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-        }
+        Assert.Equal(baseline, LeakProbe.LiveCount());
     }
 }
