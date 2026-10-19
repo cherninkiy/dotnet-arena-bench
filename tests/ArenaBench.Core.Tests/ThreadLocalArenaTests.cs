@@ -75,6 +75,20 @@ public class ThreadLocalArenaTests
     }
 
     [Fact]
+    public void Dispose_IsSingleShotUnderConcurrency()
+    {
+        ThreadLocalArena arenas = new(1024);
+        _ = arenas.Current;
+
+        // Without the Interlocked guard every caller would walk the snapshot and
+        // dispose the same arenas, and the second pass would hit a disposed
+        // ThreadLocal.
+        Parallel.For(0, 8, _ => arenas.Dispose());
+
+        Assert.Throws<ObjectDisposedException>(() => arenas.Current);
+    }
+
+    [Fact]
     public void AllocationsOfDifferentThreadsAreIndependent()
     {
         using var arenas = new ThreadLocalArena(4096);

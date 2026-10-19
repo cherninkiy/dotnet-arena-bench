@@ -23,7 +23,11 @@ namespace ArenaBench.Core;
 public sealed class ThreadLocalArena : IDisposable
 {
     private readonly ThreadLocal<Arena> _arenas;
-    private bool _disposed;
+
+    // 0 = alive, 1 = disposed. An int plus Interlocked, not a bool: Dispose has to
+    // be single-shot even when two threads call it at once, and Current has to see
+    // the flag with a barrier.
+    private int _disposed;
 
     /// <summary>
     /// Creates the wrapper; no arena is allocated until a thread touches
@@ -49,7 +53,7 @@ public sealed class ThreadLocalArena : IDisposable
     {
         get
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
             return _arenas.Value!;
         }
     }
@@ -63,18 +67,18 @@ public sealed class ThreadLocalArena : IDisposable
 
     /// <summary>
     /// Frees every per-thread arena created so far. Other threads must have
-    /// stopped using the wrapper: a thread that calls <see cref="Current"/>
-    /// afterwards gets <see cref="ObjectDisposedException"/>, but a caller that
-    /// cached an <see cref="Arena"/> sees the usual ADR-001 D9 behaviour.
+    /// stopped using the wrapper: an arena created concurrently with (or after)
+    /// this call is not in the snapshot, so it falls back to the
+    /// <see cref="SafeArenaHandle"/> finalizer and only then leaves
+    /// <c>LiveCount</c>. Calling Dispose twice, or from several threads at once,
+    /// is a no-op after the first call.
     /// </summary>
     public void Dispose()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
             return;
         }
-
-        _disposed = true;
 
         foreach (Arena arena in _arenas.Values)
         {
