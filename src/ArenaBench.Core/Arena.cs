@@ -10,8 +10,15 @@ namespace ArenaBench.Core;
 /// </summary>
 public sealed class Arena : IDisposable
 {
+    private static int s_nextId;
+
     private readonly SafeArenaHandle _handle;
     private readonly int _defaultAlign;
+
+    // Identity of this arena, handed to every mark it issues. Without it a mark
+    // from another arena looks perfectly valid here (generations of two arenas
+    // coincide, the offset is in range) and would roll back an unrelated block.
+    private readonly int _id;
     private nuint _offset;
     private uint _generation;
     private bool _disposed;
@@ -28,6 +35,7 @@ public sealed class Arena : IDisposable
     public Arena(nuint size, int defaultAlign = 16)
     {
         ValidateAlign(defaultAlign);
+        _id = Interlocked.Increment(ref s_nextId);
         _handle = new SafeArenaHandle(size, ownsMemory: true);
         _defaultAlign = defaultAlign;
     }
@@ -42,6 +50,7 @@ public sealed class Arena : IDisposable
     {
         ValidateAlign(defaultAlign);
         ArgumentOutOfRangeException.ThrowIfEqual(memory, IntPtr.Zero);
+        _id = Interlocked.Increment(ref s_nextId);
         _handle = new SafeArenaHandle(memory, size, ownsMemory);
         _defaultAlign = defaultAlign;
     }
@@ -65,8 +74,11 @@ public sealed class Arena : IDisposable
     /// </summary>
     public uint Generation => _generation;
 
-    /// <summary>Captures the current offset for a later <see cref="Release"/> (ADR-001 D4).</summary>
-    public ArenaMark Mark() => new(_offset);
+    /// <summary>
+    /// Captures the current offset together with the generation and the identity
+    /// of this arena, for a later <see cref="Release"/> (ADR-001 D4).
+    /// </summary>
+    public ArenaMark Mark() => new(_offset, _generation, _id);
 
     /// <summary>
     /// RAII scope over <see cref="Mark"/>/<see cref="Release"/> (ADR-001 D4):
@@ -79,13 +91,32 @@ public sealed class Arena : IDisposable
 
     /// <summary>
     /// Rolls the offset back to a previously captured mark (ADR-001 D4).
-    /// A mark equal to the current offset is a legal no-op; a mark that is newer
-    /// than the arena state (an out-of-order release, or a mark taken before a
-    /// <see cref="Reset"/>) throws <see cref="ArgumentException"/>.
+    /// A mark equal to the current offset is a legal no-op. Everything else is
+    /// rejected with <see cref="ArgumentException"/>: a mark that is newer than
+    /// the arena state (out-of-order release), a mark taken before a
+    /// <see cref="Reset"/> of this arena, and a mark taken in a different arena.
+    /// The last two would otherwise move the offset back over memory that has
+    /// already been reissued - the ADR-001 D9 corruption the generation counter
+    /// exists to catch.
     /// </summary>
     public void Release(ArenaMark mark)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (mark.ArenaId != _id)
+        {
+            throw new ArgumentException(
+                "Mark belongs to a different arena: releasing it here would roll back an unrelated block.",
+                nameof(mark));
+        }
+
+        if (mark.Generation != _generation)
+        {
+            throw new ArgumentException(
+                "Mark was taken before the arena was reset: the memory it points at has been reissued.",
+                nameof(mark));
+        }
+
         if (mark.Offset > _offset)
         {
             throw new ArgumentException("Mark is newer than the current arena state.", nameof(mark));

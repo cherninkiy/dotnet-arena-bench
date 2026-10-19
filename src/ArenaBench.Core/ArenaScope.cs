@@ -2,13 +2,27 @@ namespace ArenaBench.Core;
 
 /// <summary>
 /// Opaque rollback token returned by <see cref="Arena.Mark"/> (ADR-001 D4).
-/// Out-of-order release is not supported.
+/// Carries the generation and the identity of the arena that issued it, so a
+/// mark taken before a <c>Reset</c> - or in another arena - is rejected by
+/// <see cref="Arena.Release"/> instead of rolling the offset back over memory
+/// that has already been reissued. Out-of-order release is not supported.
 /// </summary>
 public readonly struct ArenaMark
 {
     internal nuint Offset { get; }
 
-    internal ArenaMark(nuint offset) => Offset = offset;
+    /// <summary>Generation of the issuing arena when the mark was taken (ADR-001 D9).</summary>
+    internal uint Generation { get; }
+
+    /// <summary>Identity of the issuing arena - generations of two arenas coincide.</summary>
+    internal int ArenaId { get; }
+
+    internal ArenaMark(nuint offset, uint generation, int arenaId)
+    {
+        Offset = offset;
+        Generation = generation;
+        ArenaId = arenaId;
+    }
 }
 
 /// <summary>
@@ -40,7 +54,10 @@ public ref struct ArenaScope
             return;
         }
 
-        _disposed = true;
+        // Release first, then mark the scope as done: a stale mark makes Release
+        // throw, and the scope has to stay armed so that a second Dispose reports
+        // the same problem instead of silently swallowing it.
         _arena.Release(_mark);
+        _disposed = true;
     }
 }

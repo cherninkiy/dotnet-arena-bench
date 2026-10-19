@@ -42,6 +42,35 @@ public class ArenaTests
     }
 
     [Fact]
+    public void Scope_AfterReset_ThrowsOnDisposeAndStaysArmed()
+    {
+        using var arena = new Arena(1024);
+        ArenaScope scope = arena.Scope();
+        _ = arena.AllocBytes(64, 16);
+        arena.Reset();
+        _ = arena.AllocBytes(256, 16);
+
+        // A ref struct cannot be captured by Assert.Throws, so the disposals are
+        // spelled out. The first one must throw; the scope must then stay armed,
+        // otherwise the second Dispose would silently swallow the stale mark.
+        Assert.True(DisposeExpectingFailure(ref scope), "a stale scope must not roll back silently");
+        Assert.True(DisposeExpectingFailure(ref scope), "the scope must stay armed after a failed release");
+    }
+
+    private static bool DisposeExpectingFailure(ref ArenaScope scope)
+    {
+        try
+        {
+            scope.Dispose();
+            return false;
+        }
+        catch (ArgumentException)
+        {
+            return true;
+        }
+    }
+
+    [Fact]
     public void SequentialMarkRelease_Works()
     {
         using var arena = new Arena(1024);
@@ -289,7 +318,8 @@ public class ArenaTests
     {
         // ArenaScope documents exactly this: a Reset between the mark and the release
         // invalidates the mark, so the rollback fails instead of restoring an offset
-        // the arena no longer has.
+        // the arena no longer has. Here the arena is still empty after the reset, so
+        // the generation check is what rejects the mark.
         using var arena = new Arena(1024);
         _ = arena.AllocBytes(64, 16);
         ArenaMark mark = arena.Mark();
@@ -298,6 +328,37 @@ public class ArenaTests
 
         Assert.Throws<ArgumentException>(() => arena.Release(mark));
         Assert.Equal(0u, (uint)arena.UsedBytes);
+    }
+
+    [Fact]
+    public void Release_MarkTakenBeforeReset_AfterGrowingPastIt_Throws()
+    {
+        // The dangerous shape of the same bug: after the reset the arena grew past
+        // the mark again, so an offset comparison alone would accept it and move the
+        // offset back over memory that has already been reissued (ADR-001 D9).
+        using var arena = new Arena(1024);
+        _ = arena.AllocBytes(100, 16);
+        ArenaMark mark = arena.Mark();
+        arena.Reset();
+        _ = arena.AllocBytes(256, 16);
+
+        Assert.Throws<ArgumentException>(() => arena.Release(mark));
+        Assert.Equal(256u, (uint)arena.UsedBytes);
+    }
+
+    [Fact]
+    public void Release_MarkFromAnotherArena_Throws()
+    {
+        // Both arenas start at generation 0, so without the arena identity a foreign
+        // mark looks valid and would roll back the wrong block.
+        using var first = new Arena(1024);
+        using var second = new Arena(1024);
+        _ = second.AllocBytes(64, 16);
+        ArenaMark foreign = second.Mark();
+        _ = first.AllocBytes(128, 16);
+
+        Assert.Throws<ArgumentException>(() => first.Release(foreign));
+        Assert.Equal(128u, (uint)first.UsedBytes);
     }
 
     [Fact]
