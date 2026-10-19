@@ -91,7 +91,10 @@ public class SolverCsrBench
     {
         _buildArena.Reset();
         CsrGraphView view = _graph.CopyTo(_buildArena);
-        return CsrTraversal.Scan(view);
+
+        // The same three slots the managed variant reads: the case has to price
+        // the build, not an extra traversal of what was just written.
+        return view.Offsets[0] + view.Targets[0] + (long)view.Costs[view.Costs.Length - 1];
     }
 }
 

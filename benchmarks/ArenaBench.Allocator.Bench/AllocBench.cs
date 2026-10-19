@@ -144,14 +144,13 @@ public class AllocBatchBench
             _holders[i][0] = i;
         }
 
-        long capacity = 0;
+        int firstLength = _holders[0].Length;
         for (int i = 0; i < Count; i++)
         {
-            capacity += _holders[i].Length;
             _pool.ReturnFloat(_holders[i]);
         }
 
-        return capacity;
+        return firstLength;
     }
 
     /// <summary>A02: N bumps, one O(1) reset (ADR-001 D7).</summary>
@@ -179,14 +178,13 @@ public class AllocBatchBench
             _holders[i][0] = i;
         }
 
-        long capacity = 0;
+        int firstLength = _holders[0].Length;
         for (int i = 0; i < Count; i++)
         {
-            capacity += _holders[i].Length;
             ArrayPool<float>.Shared.Return(_holders[i]);
         }
 
-        return capacity;
+        return firstLength;
     }
 
     /// <summary>A02: NativeMemory without an arena - every buffer is a CRT call pair.</summary>
@@ -254,14 +252,13 @@ public class AllocChurnBench
             _holders[i][0] = (byte)i;
         }
 
-        long total = 0;
+        int firstLength = _holders[0].Length;
         for (int i = 0; i < Count; i++)
         {
-            total += _holders[i].Length;
             ArrayPool<byte>.Shared.Return(_holders[i]);
         }
 
-        return total;
+        return firstLength;
     }
 
     /// <summary>A03: N bumps, one reset - no per-record bookkeeping at all.</summary>
