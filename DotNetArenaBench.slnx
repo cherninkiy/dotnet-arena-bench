@@ -9,6 +9,7 @@
     <Project Path="src/ArenaBench.Serialization.Core/ArenaBench.Serialization.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/ArenaBench.Allocator.Tests/ArenaBench.Allocator.Tests.csproj" />
     <Project Path="tests/ArenaBench.Core.Tests/ArenaBench.Core.Tests.csproj" />
     <Project Path="tests/ArenaBench.Serialization.Tests/ArenaBench.Serialization.Tests.csproj" />
   </Folder>
