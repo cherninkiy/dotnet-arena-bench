@@ -83,6 +83,12 @@ mmap (I08). Для честного сравнения «arena vs pinned managed
 (`DllNotFoundException`, dotnet/sdk #6642) — поэтому macOS идёт через
 явный `libSystem`.
 
+**Оговорка о Linux:** цепочка проверена на glibc (`ubuntu-latest` в CI плюс
+локальный прогон); на Alpine/musl `libc` может не резолвиться (реальная
+библиотека там `libc.musl-*.so.1`, а `libc.so` — необязательный симлинк), и
+`NativeLibrary.Load` в raw-экспорте упадёт там же. Для PoC это вне scope, но при
+переносе на musl-образы это первое, что нужно проверить.
+
 Резолюция — через `RuntimeInformation.IsOSPlatform` в `LibcResolver.cs`
 (имена библиотек + пробы ОС). Так как `LibraryImport` требует
 compile-time константу, каждая функция объявлена по одному разу на ОС
