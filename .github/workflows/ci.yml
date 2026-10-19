@@ -53,13 +53,15 @@ jobs:
       # representative PoC-1 class - T2ServiceRecord16Bench covers every source and
       # every strategy (S01-S20) on the 16 B record - which keeps the bench steps
       # near three minutes per runner; the other series (T1, T3, the remaining T2
-      # sizes) are started by hand, where `filter` defaults to the whole set. PoC-2
-      # has four cases, so CI always runs it in full.
+      # sizes) are started by hand, where `filter` defaults to the whole set.
+      # PoC-2 has grown into the A/B/E matrix on Day 3, so its smoke target is the
+      # four-case SmokeBench - one walk through every arena lifetime shape -
+      # rather than the whole set.
       # They are read as shell variables, not interpolated into the script, so a
       # filter string can never be re-interpreted as shell code.
       BENCH_JOB: ${{ inputs.job || 'short' }}
       POC1_FILTER: ${{ inputs.filter || '*T2ServiceRecord16Bench*' }}
-      POC2_FILTER: ${{ inputs.filter || '*' }}
+      POC2_FILTER: ${{ inputs.filter || '*Allocator.Bench.SmokeBench*' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
