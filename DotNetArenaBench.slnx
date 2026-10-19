@@ -4,6 +4,7 @@
     <Project Path="benchmarks/ArenaBench.Serialization.Bench/ArenaBench.Serialization.Bench.csproj" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/ArenaBench.Allocator.Core/ArenaBench.Allocator.Core.csproj" />
     <Project Path="src/ArenaBench.Core/ArenaBench.Core.csproj" />
     <Project Path="src/ArenaBench.Serialization.Core/ArenaBench.Serialization.Core.csproj" />
   </Folder>
