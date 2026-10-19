@@ -65,62 +65,129 @@ internal static unsafe partial class NativeMethods
     /// and I09 measures it (the returned pointer of C memcpy is ignored on
     /// purpose: it is ABI-compatible with a void return).
     /// </summary>
+    /// <exception cref="PlatformNotSupportedException">
+    /// The C library or a symbol did not resolve on this platform; see
+    /// <see cref="RawExportsAvailable"/>. The wrapper path above is unaffected.
+    /// </exception>
     public static void RawMemcpy(IntPtr destination, IntPtr source, nuint byteCount)
-        => s_rawMemcpy(destination, source, byteCount);
+    {
+        ThrowIfRawUnavailable();
+        s_rawMemcpy(destination, source, byteCount);
+    }
 
     /// <summary>Raw export of memset (ADR-002 D2, measured by I09).</summary>
+    /// <inheritdoc cref="RawMemcpy"/>
     public static void RawMemset(IntPtr destination, int value, nuint byteCount)
-        => s_rawMemset(destination, value, byteCount);
+    {
+        ThrowIfRawUnavailable();
+        s_rawMemset(destination, value, byteCount);
+    }
 
     /// <summary>Raw export of memcmp (ADR-002 D2, measured by I09).</summary>
+    /// <inheritdoc cref="RawMemcpy"/>
     public static int RawMemcmp(IntPtr lhs, IntPtr rhs, nuint byteCount)
-        => s_rawMemcmp(lhs, rhs, byteCount);
+    {
+        ThrowIfRawUnavailable();
+        return s_rawMemcmp(lhs, rhs, byteCount);
+    }
 
-    // Loaded once and kept for the process lifetime: the raw path exists to be
-    // measured, not to manage handles.
+    /// <summary>
+    /// Whether the raw exports resolved here. The managed wrapper path never
+    /// depends on them: the raw path is best-effort by design, so a platform where
+    /// the library or one of the symbols is missing loses the I09 baseline instead
+    /// of the whole boundary series.
+    /// </summary>
+    public static bool RawExportsAvailable => s_rawAvailable;
+
+    /// <summary>
+    /// Candidates for the raw path, tried in order.
+    /// <see cref="NativeLibrary.Load(string)"/> takes its argument as a file name:
+    /// the platform suffix probing that <see cref="LibraryImportAttribute"/> does
+    /// (lib/dl/dylib, version suffixes) is **not** applied, so the bare names that
+    /// work for the declarations above do not resolve here - macOS needs the
+    /// canonical <c>/usr/lib/libSystem.B.dylib</c>, Linux the soname, Windows the
+    /// <c>.dll</c>.
+    /// </summary>
+    private static readonly string[] s_rawCandidates = RawCandidates();
+
     private static readonly IntPtr s_library;
+    private static readonly bool s_rawAvailable;
     private static readonly delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, void> s_rawMemcpy;
     private static readonly delegate* unmanaged[Cdecl]<IntPtr, int, nuint, void> s_rawMemset;
     private static readonly delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, int> s_rawMemcmp;
 
     /// <summary>
-    /// Resolves everything in one explicit order. Field initializers would depend
-    /// on their declaration order (the raw pointers need the library handle), and
-    /// a reordered field would turn a refactoring slip into a
-    /// <see cref="TypeInitializationException"/> on the first call instead of a
-    /// visible dependency here.
+    /// Resolves everything in one explicit order: field initializers would depend
+    /// on their declaration order, and a reordered field would turn a refactoring
+    /// slip into a <see cref="TypeInitializationException"/> on the first call
+    /// instead of a visible dependency here. The raw part is best-effort - a
+    /// missing library or symbol leaves <see cref="RawExportsAvailable"/> false
+    /// and does not stop the type from initializing.
     /// </summary>
     static NativeMethods()
     {
-        s_library = NativeLibrary.Load(LibraryName());
-        s_rawMemcpy = (delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, void>)ResolveExport("memcpy");
-        s_rawMemset = (delegate* unmanaged[Cdecl]<IntPtr, int, nuint, void>)ResolveExport("memset");
-        s_rawMemcmp = (delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, int>)ResolveExport("memcmp");
         s_memcpy = SelectMemcpy();
         s_memset = SelectMemset();
         s_memcmp = SelectMemcmp();
+
+        s_library = LoadFirst(s_rawCandidates);
+        IntPtr rawMemcpy = TryResolveExport("memcpy");
+        IntPtr rawMemset = TryResolveExport("memset");
+        IntPtr rawMemcmp = TryResolveExport("memcmp");
+
+        s_rawAvailable = rawMemcpy != IntPtr.Zero && rawMemset != IntPtr.Zero && rawMemcmp != IntPtr.Zero;
+        if (s_rawAvailable)
+        {
+            s_rawMemcpy = (delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, void>)rawMemcpy;
+            s_rawMemset = (delegate* unmanaged[Cdecl]<IntPtr, int, nuint, void>)rawMemset;
+            s_rawMemcmp = (delegate* unmanaged[Cdecl]<IntPtr, IntPtr, nuint, int>)rawMemcmp;
+        }
     }
 
-    private static string LibraryName()
-        => LibcResolver.IsWindows ? LibcResolver.WindowsCrt
-         : LibcResolver.IsMacOS ? LibcResolver.MacLibSystem
-         : LibcResolver.LinuxLibc;
+    private static string[] RawCandidates()
+        => LibcResolver.IsWindows ? ["ucrtbase.dll", "ucrtbase", "msvcrt.dll"]
+         : LibcResolver.IsMacOS ? ["/usr/lib/libSystem.B.dylib", "libSystem.dylib", "libSystem"]
+         : ["libc.so.6", "libc", "libc.so"];
 
-    private static IntPtr ResolveExport(string symbol)
+    private static IntPtr LoadFirst(string[] candidates)
     {
+        foreach (string candidate in candidates)
+        {
+            if (NativeLibrary.TryLoad(candidate, out IntPtr handle))
+            {
+                return handle;
+            }
+        }
+
+        return IntPtr.Zero;
+    }
+
+    private static IntPtr TryResolveExport(string symbol)
+    {
+        if (s_library == IntPtr.Zero)
+        {
+            return IntPtr.Zero;
+        }
+
         if (NativeLibrary.TryGetExport(s_library, symbol, out IntPtr address))
         {
             return address;
         }
 
         // The Mach-O symbol table carries C symbols with a leading underscore.
-        if (NativeLibrary.TryGetExport(s_library, "_" + symbol, out address))
+        return NativeLibrary.TryGetExport(s_library, "_" + symbol, out address) ? address : IntPtr.Zero;
+    }
+
+    private static void ThrowIfRawUnavailable()
+    {
+        if (s_rawAvailable)
         {
-            return address;
+            return;
         }
 
-        throw new EntryPointNotFoundException(
-            $"Export {symbol} was not found in {LibraryName()} (ADR-002 D2).");
+        throw new PlatformNotSupportedException(
+            $"The raw libc exports did not resolve on this platform (tried {string.Join(", ", s_rawCandidates)}); "
+            + "the LibraryImport wrapper path is unaffected, see NativeMethods.RawExportsAvailable.");
     }
 
     private static delegate* managed<IntPtr, IntPtr, nuint, void> SelectMemcpy()

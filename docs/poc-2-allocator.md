@@ -330,6 +330,16 @@ payload'ах; с 1 KiB она уже в пределах разброса, а с
 оптимизации — ручное управление временем жизни указателей и потеря проверок ABI
 на старте.
 
+Оговорка о платформах: raw-путь резолвит библиотеку сам
+(`NativeLibrary.Load` + `GetExport`) и **не** получает платформенную подстановку
+суффиксов, которую делает `LibraryImport`, поэтому кандидатов несколько
+(`/usr/lib/libSystem.B.dylib` на macOS, `libc.so.6` на Linux, `ucrtbase.dll` на
+Windows). Если библиотека или символ не нашлись, raw-путь остаётся недоступным
+(`PInvokeScenarios.RawExportsAvailable == false`) и I09 теряет baseline, а
+обёрточный путь продолжает работать: первая версия падала на macOS в
+инициализации типа (`libSystem` как имя файла не резолвится) и утаскивала за
+собой всю I-серию вместе с тестами обёртки (ADR-002).
+
 ### I08 — mmap: arena поверх shared memory (ADR-002 D4)
 
 | Размер | BCL `MemoryMappedViewAccessor.WriteArray` | Arena поверх mapping | Arena поверх `NativeMemory` |

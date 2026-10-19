@@ -17,6 +17,15 @@ namespace ArenaBench.Allocator.Core.Boundaries;
 /// </remarks>
 public static class PInvokeScenarios
 {
+    /// <summary>
+    /// Whether the raw exports (I09) are usable on this platform. The raw path is
+    /// best-effort by design: <c>NativeLibrary.Load</c> takes a file name and does
+    /// not apply the platform suffix probing that <c>LibraryImport</c> does, so on a
+    /// platform where the library or a symbol does not resolve the raw cases lose
+    /// their baseline while every wrapper case keeps working.
+    /// </summary>
+    public static bool RawExportsAvailable => NativeMethods.RawExportsAvailable;
+
     /// <summary>I01: native reads our buffer - memcpy from our memory into a sink.</summary>
     public static long NativeReadsOurs(IntPtr ours, IntPtr sink, int size)
     {

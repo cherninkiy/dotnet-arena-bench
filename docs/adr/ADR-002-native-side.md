@@ -83,11 +83,20 @@ mmap (I08). Для честного сравнения «arena vs pinned managed
 (`DllNotFoundException`, dotnet/sdk #6642) — поэтому macOS идёт через
 явный `libSystem`.
 
-**Оговорка о Linux:** цепочка проверена на glibc (`ubuntu-latest` в CI плюс
-локальный прогон); на Alpine/musl `libc` может не резолвиться (реальная
-библиотека там `libc.musl-*.so.1`, а `libc.so` — необязательный симлинк), и
-`NativeLibrary.Load` в raw-экспорте упадёт там же. Для PoC это вне scope, но при
-переносе на musl-образы это первое, что нужно проверить.
+**Оговорка про имена библиотек:** `LibraryImport`/`DllImport` подставляют
+платформенные суффиксы (`libSystem` → `libSystem.dylib`, `ucrtbase` →
+`ucrtbase.dll`) и имеют собственный список кандидатов, а `NativeLibrary.Load`
+берёт строку как **имя файла**. Поэтому raw-экспорт (I09) резолвит библиотеку по
+явному списку кандидатов — `/usr/lib/libSystem.B.dylib` → `libSystem.dylib` →
+`libSystem` на macOS, `libc.so.6` → `libc` → `libc.so` на Linux, `ucrtbase.dll`
+→ `ucrtbase` → `msvcrt.dll` на Windows — и работает **best-effort**: если
+библиотека или символ не нашлись, raw-путь остаётся недоступным
+(`NativeMethods.RawExportsAvailable == false`, вызов бросает
+`PlatformNotSupportedException`), а обёрточный путь продолжает работать. Это не
+теория: первая версия вызывала `NativeLibrary.Load("libSystem")` и падала на
+macOS в инициализации типа, утаскивая за собой всю I-серию вместе с тестами
+обёрточного пути. Проверено на glibc, macOS и Windows; на Alpine/musl `libc.so.6`
+может отсутствовать — там сработает только `libc`, если он есть в образе.
 
 Резолюция — через `RuntimeInformation.IsOSPlatform` в `LibcResolver.cs`
 (имена библиотек + пробы ОС). Так как `LibraryImport` требует

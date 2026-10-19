@@ -55,4 +55,46 @@ public class NativeMethodsTests
         NativeMethods.Memset(destination, 0x00, (nuint)size);
         Assert.NotEqual(0, NativeMethods.Memcmp(destination, source, (nuint)size));
     }
+
+    /// <summary>
+    /// The raw path bypasses the runtime's library probing (<c>NativeLibrary.Load</c>
+    /// takes a file name), so it resolves through an explicit candidate list. On
+    /// Windows and Linux it must resolve - otherwise I09 silently loses its
+    /// baseline. On macOS the canonical <c>/usr/lib/libSystem.B.dylib</c> is not
+    /// guaranteed to be loadable from every runtime configuration, so the state is
+    /// left to <see cref="NativeMethods.RawExportsAvailable"/>: the wrapper path
+    /// above is what the boundary depends on.
+    /// </summary>
+    [Fact]
+    public void RawExports_ResolveWhereTheLibraryNameIsKnown()
+    {
+        if (OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        Assert.True(
+            NativeMethods.RawExportsAvailable,
+            "the raw libc exports must resolve on Windows and Linux (ADR-002 D2, case I09)");
+    }
+
+    /// <summary>Same round trip as above, through the raw exports (I09's path).</summary>
+    [Fact]
+    public void RawExports_RoundTripLikeTheWrapper()
+    {
+        if (!NativeMethods.RawExportsAvailable)
+        {
+            return;
+        }
+
+        using var arena = new Arena(256);
+        IntPtr buffer = arena.AllocPtr<byte>(32);
+        IntPtr copy = arena.AllocPtr<byte>(32);
+
+        NativeMethods.RawMemset(buffer, 0x7E, 32);
+        NativeMethods.RawMemcpy(copy, buffer, 32);
+
+        Assert.Equal(0, NativeMethods.RawMemcmp(copy, buffer, 32));
+        Assert.Equal(0x7E, Marshal.ReadByte(copy, 31));
+    }
 }
