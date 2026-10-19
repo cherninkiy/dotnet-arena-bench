@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\ArenaBench.Allocator.Core\ArenaBench.Allocator.Core.csproj" />
     <ProjectReference Include="..\..\src\ArenaBench.Core\ArenaBench.Core.csproj" />
   </ItemGroup>
 
@@ -13,6 +14,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
 </Project>
