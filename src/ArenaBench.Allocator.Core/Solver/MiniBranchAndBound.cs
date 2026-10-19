@@ -80,6 +80,20 @@ public sealed class MiniBranchAndBound
     }
 
     /// <summary>
+    /// Measures the per-graph constants once, so that a benchmark (or a solver
+    /// tick) does not pay for them inside every search. The layout is validated
+    /// here as well: the call already walks the graph, and a malformed CSR should
+    /// fail once, at preparation, instead of quietly producing a wrong bound.
+    /// </summary>
+    /// <param name="graph">CSR graph to measure.</param>
+    /// <exception cref="InvalidOperationException">The layout is not a valid CSR.</exception>
+    public static BnBMetrics Measure(CsrGraphView graph)
+    {
+        graph.Validate();
+        return new BnBMetrics(CheapestEdge(graph), ScratchLengthFor(graph));
+    }
+
+    /// <summary>
     /// Cheapest source-to-sink walk with at most <see cref="MaxHops"/> edges, or
     /// <see cref="float.PositiveInfinity"/> when the sink is unreachable within
     /// that many hops. A walk may revisit nodes: the cost bound, not a visited
@@ -87,10 +101,16 @@ public sealed class MiniBranchAndBound
     /// </summary>
     /// <typeparam name="TScratch">Scratch provider under test (a struct, so the call is devirtualized).</typeparam>
     /// <param name="graph">Valid CSR graph (see the class remarks).</param>
+    /// <param name="metrics">Per-graph constants from <see cref="Measure"/>.</param>
     /// <param name="source">Start node.</param>
     /// <param name="sink">Target node.</param>
     /// <param name="scratch">Provider the per-node row buffer comes from.</param>
-    public float Solve<TScratch>(CsrGraphView graph, int source, int sink, ref TScratch scratch)
+    public float Solve<TScratch>(
+        CsrGraphView graph,
+        BnBMetrics metrics,
+        int source,
+        int sink,
+        ref TScratch scratch)
         where TScratch : struct, IScratchProvider
     {
         ArgumentOutOfRangeException.ThrowIfNegative(source);
@@ -99,16 +119,18 @@ public sealed class MiniBranchAndBound
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(sink, graph.NodeCount);
 
         Expansions = 0;
-        ScratchLength = ScratchLengthFor(graph);
+        ScratchLength = metrics.ScratchLength;
 
         if (source == sink)
         {
             return 0f;
         }
 
-        // Lower bound per remaining hop, clamped to 0 so it stays admissible for
-        // a graph with negative costs or without edges at all.
-        float cheapestEdge = CheapestEdge(graph);
+        // Both values come from Measure: the lower bound per remaining hop (clamped
+        // to 0, which keeps it admissible for negative costs or an edgeless graph)
+        // and the row width. They cost O(N)+O(E), so they are not part of the search
+        // the benchmark is pricing.
+        float cheapestEdge = metrics.CheapestEdge;
         float best = float.PositiveInfinity;
 
         int depth = 0;

@@ -25,20 +25,21 @@ public class MiniBranchAndBoundTests
         const int sink = 32;
         CsrGraph graph = CsrGraph.CreateRandom(nodes);
         float expected = ReferenceBoundedBellmanFord(graph, source, sink, MaxHops);
+        BnBMetrics metrics = MiniBranchAndBound.Measure(graph.View);
 
         var solver = new MiniBranchAndBound(nodeBudget: 4096, maxHops: MaxHops);
         using var arena = new Arena(ScratchBytes(graph));
         var pool = new PathPoolMock();
 
         var arenaScratch = new ArenaScratchProvider(arena);
-        float fromArena = solver.Solve(graph.View, source, sink, ref arenaScratch);
+        float fromArena = solver.Solve(graph.View, metrics, source, sink, ref arenaScratch);
         int arenaExpansions = solver.Expansions;
 
         var poolScratch = new PathPoolScratchProvider(pool);
-        float fromPool = solver.Solve(graph.View, source, sink, ref poolScratch);
+        float fromPool = solver.Solve(graph.View, metrics, source, sink, ref poolScratch);
 
         var arrayScratch = new ArrayPoolScratchProvider(ArrayPool<float>.Shared);
-        float fromArrayPool = solver.Solve(graph.View, source, sink, ref arrayScratch);
+        float fromArrayPool = solver.Solve(graph.View, metrics, source, sink, ref arrayScratch);
 
         Assert.Equal(expected, fromArena, 3);
         Assert.Equal(fromArena, fromPool);       // the allocator must not change the answer
@@ -53,9 +54,10 @@ public class MiniBranchAndBoundTests
         CsrGraph graph = CsrGraph.CreateRandom(64);
         using var arena = new Arena(ScratchBytes(graph));
         var solver = new MiniBranchAndBound(nodeBudget: 512, maxHops: MaxHops);
+        BnBMetrics metrics = MiniBranchAndBound.Measure(graph.View);
 
         var scratch = new ArenaScratchProvider(arena);
-        _ = solver.Solve(graph.View, 0, 32, ref scratch);
+        _ = solver.Solve(graph.View, metrics, 0, 32, ref scratch);
 
         // Every rent was released: the arena sits exactly where it started, which
         // is the property E03 compares against the pool round trips (ADR-001 D4).
@@ -69,9 +71,10 @@ public class MiniBranchAndBoundTests
         CsrGraph graph = CsrGraph.CreateRandom(64);
         var pool = new PathPoolMock();
         var solver = new MiniBranchAndBound(nodeBudget: 512, maxHops: MaxHops);
+        BnBMetrics metrics = MiniBranchAndBound.Measure(graph.View);
 
         var scratch = new PathPoolScratchProvider(pool);
-        _ = solver.Solve(graph.View, 0, 32, ref scratch);
+        _ = solver.Solve(graph.View, metrics, 0, 32, ref scratch);
 
         Assert.Equal(1, pool.FloatPoolSize);
         Assert.Equal(1, pool.FloatArrayAllocations); // one buffer, reused for every node
@@ -83,9 +86,10 @@ public class MiniBranchAndBoundTests
         CsrGraph graph = CsrGraph.CreateRandom(64);
         using var arena = new Arena(ScratchBytes(graph));
         var solver = new MiniBranchAndBound(nodeBudget: 16, maxHops: MaxHops);
+        BnBMetrics metrics = MiniBranchAndBound.Measure(graph.View);
 
         var scratch = new ArenaScratchProvider(arena);
-        _ = solver.Solve(graph.View, 0, 32, ref scratch);
+        _ = solver.Solve(graph.View, metrics, 0, 32, ref scratch);
 
         Assert.Equal(16, solver.Expansions);
     }
@@ -125,9 +129,10 @@ public class MiniBranchAndBoundTests
         CsrGraph graph = CsrGraph.CreateRandom(16);
         using var arena = new Arena(ScratchBytes(graph));
         var solver = new MiniBranchAndBound(nodeBudget: 64, maxHops: MaxHops);
+        BnBMetrics metrics = MiniBranchAndBound.Measure(graph.View);
         var scratch = new ArenaScratchProvider(arena);
 
-        Assert.Equal(0f, solver.Solve(graph.View, 3, 3, ref scratch));
+        Assert.Equal(0f, solver.Solve(graph.View, metrics, 3, 3, ref scratch));
         Assert.Equal(0, solver.Expansions);
     }
 
@@ -137,27 +142,33 @@ public class MiniBranchAndBoundTests
         CsrGraph graph = CsrGraph.CreateRandom(16);
         using var arena = new Arena(ScratchBytes(graph));
         var solver = new MiniBranchAndBound(nodeBudget: 64, maxHops: MaxHops);
+        BnBMetrics metrics = MiniBranchAndBound.Measure(graph.View);
         var scratch = new ArenaScratchProvider(arena);
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => solver.Solve(graph.View, 16, 0, ref scratch));
-        Assert.Throws<ArgumentOutOfRangeException>(() => solver.Solve(graph.View, 0, -1, ref scratch));
+        Assert.Throws<ArgumentOutOfRangeException>(() => solver.Solve(graph.View, metrics, 16, 0, ref scratch));
+        Assert.Throws<ArgumentOutOfRangeException>(() => solver.Solve(graph.View, metrics, 0, -1, ref scratch));
     }
 
     [Fact]
-    public void ScratchLengthFor_ReturnsTheWidestRow()
+    public void Measure_ReturnsTheWidestRowAndTheCheapestEdge()
     {
         CsrGraph graph = CsrGraph.CreateRandom(32, extraEdgesPerNode: 3);
+        BnBMetrics metrics = MiniBranchAndBound.Measure(graph.View);
 
+        Assert.Equal(4, metrics.ScratchLength);
         Assert.Equal(4, MiniBranchAndBound.ScratchLengthFor(graph.View));
+        Assert.InRange(metrics.CheapestEdge, 0.5f, 4f);
+        Assert.Equal(graph.Costs.ToArray().Min(), metrics.CheapestEdge);
     }
 
     /// <summary>Solves source -> last node of <paramref name="view"/> with a one-off arena.</summary>
     private static float Solve(CsrGraphView view, int maxHops)
     {
         var solver = new MiniBranchAndBound(nodeBudget: 1024, maxHops: maxHops);
-        using var arena = new Arena((nuint)((MiniBranchAndBound.ScratchLengthFor(view) * sizeof(float)) + 64));
+        BnBMetrics metrics = MiniBranchAndBound.Measure(view);
+        using var arena = new Arena((nuint)((metrics.ScratchLength * sizeof(float)) + 64));
         var scratch = new ArenaScratchProvider(arena);
-        return solver.Solve(view, 0, view.NodeCount - 1, ref scratch);
+        return solver.Solve(view, metrics, 0, view.NodeCount - 1, ref scratch);
     }
 
     private static nuint ScratchBytes(CsrGraph graph) =>

@@ -118,6 +118,7 @@ public class SolverRollbackBench
     private MiniBranchAndBound _solver = null!;
     private PathPoolMock _pool = null!;
     private Arena _arena = null!;
+    private BnBMetrics _metrics;
     private int _sink;
 
     /// <summary>Nodes in the generated graph; the row scratch grows with the widest row.</summary>
@@ -136,10 +137,15 @@ public class SolverRollbackBench
         _solver = new MiniBranchAndBound(NodeBudget, maxHops: 8);
         _pool = new PathPoolMock();
 
+        // The per-graph constants are measured once: they cost O(N)+O(E), which is
+        // the same order as a shallow search, so counting them inside Solve would
+        // hide most of the allocator difference this case exists to price.
+        _metrics = MiniBranchAndBound.Measure(_graph.View);
+
         // Rent/Release pair up per node, so a single row is live at any moment:
         // the widest row plus the alignment slack is the whole block the arena
         // needs for the deepest search.
-        _arena = new Arena(((nuint)MiniBranchAndBound.ScratchLengthFor(_graph.View) * sizeof(float)) + 64);
+        _arena = new Arena(((nuint)_metrics.ScratchLength * sizeof(float)) + 64);
     }
 
     [GlobalCleanup]
@@ -150,7 +156,7 @@ public class SolverRollbackBench
     public float PathPool_RentReturn()
     {
         var scratch = new PathPoolScratchProvider(_pool);
-        return _solver.Solve(_graph.View, Source, _sink, ref scratch);
+        return _solver.Solve(_graph.View, _metrics, Source, _sink, ref scratch);
     }
 
     /// <summary>E03: Mark/Release - the offset rolls back in O(1) (ADR-001 D4).</summary>
@@ -159,7 +165,7 @@ public class SolverRollbackBench
     {
         _arena.Reset();
         var scratch = new ArenaScratchProvider(_arena);
-        return _solver.Solve(_graph.View, Source, _sink, ref scratch);
+        return _solver.Solve(_graph.View, _metrics, Source, _sink, ref scratch);
     }
 
     /// <summary>E03: ArrayPool on the same per-node pattern.</summary>
@@ -167,7 +173,7 @@ public class SolverRollbackBench
     public float ArrayPool_RentReturn()
     {
         var scratch = new ArrayPoolScratchProvider(ArrayPool<float>.Shared);
-        return _solver.Solve(_graph.View, Source, _sink, ref scratch);
+        return _solver.Solve(_graph.View, _metrics, Source, _sink, ref scratch);
     }
 }
 
@@ -191,10 +197,17 @@ public class SolverParallelBench
     [ThreadStatic]
     private static MiniBranchAndBound? t_solver;
 
+    // The solver above is reused across benchmarks, so the budget it was built
+    // for is remembered too: a parameter change must not silently keep a solver
+    // configured for the previous one.
+    [ThreadStatic]
+    private static int t_nodeBudget;
+
     private CsrGraph _graph = null!;
     private ThreadLocalArena _arenas = null!;
     private Arena _sharedArena = null!;
     private PathPoolMock _pool = null!;
+    private BnBMetrics _metrics;
     private int _sink;
     private int _nodeBudget;
 
@@ -214,7 +227,8 @@ public class SolverParallelBench
         _nodeBudget = 128;
         _pool = new PathPoolMock();
 
-        nuint scratchBytes = ((nuint)MiniBranchAndBound.ScratchLengthFor(_graph.View) * sizeof(float)) + 64;
+        _metrics = MiniBranchAndBound.Measure(_graph.View);
+        nuint scratchBytes = ((nuint)_metrics.ScratchLength * sizeof(float)) + 64;
         _arenas = new ThreadLocalArena(scratchBytes);
         _sharedArena = new Arena(scratchBytes);
     }
@@ -236,7 +250,7 @@ public class SolverParallelBench
         Parallel.For(0, SolveCount, options, index =>
         {
             var scratch = new PathPoolScratchProvider(pool);
-            _ = SolveOne(_graph, _sink, _nodeBudget, ref scratch);
+            _ = SolveOne(_graph, _metrics, _sink, _nodeBudget, ref scratch);
         });
 
         return SolveCount;
@@ -254,7 +268,7 @@ public class SolverParallelBench
             Arena arena = arenas.Current;
             arena.Reset(); // one arena per thread serves the whole batch
             var scratch = new ArenaScratchProvider(arena);
-            _ = SolveOne(_graph, _sink, _nodeBudget, ref scratch);
+            _ = SolveOne(_graph, _metrics, _sink, _nodeBudget, ref scratch);
         });
 
         return arenas.LiveArenaCount;
@@ -273,7 +287,7 @@ public class SolverParallelBench
             {
                 arena.Reset();
                 var scratch = new ArenaScratchProvider(arena);
-                _ = SolveOne(_graph, _sink, _nodeBudget, ref scratch);
+                _ = SolveOne(_graph, _metrics, _sink, _nodeBudget, ref scratch);
             }
         });
 
@@ -290,7 +304,7 @@ public class SolverParallelBench
         Parallel.For(0, SolveCount, options, index =>
         {
             var scratch = new ArrayPoolScratchProvider(pool);
-            _ = SolveOne(_graph, _sink, _nodeBudget, ref scratch);
+            _ = SolveOne(_graph, _metrics, _sink, _nodeBudget, ref scratch);
         });
 
         return SolveCount;
@@ -302,11 +316,21 @@ public class SolverParallelBench
     /// the thread static keeps the parallelism in the allocator, which is what
     /// E04 measures.
     /// </summary>
-    private static float SolveOne<TScratch>(CsrGraph graph, int sink, int nodeBudget, ref TScratch scratch)
+    private static float SolveOne<TScratch>(
+        CsrGraph graph,
+        BnBMetrics metrics,
+        int sink,
+        int nodeBudget,
+        ref TScratch scratch)
         where TScratch : struct, IScratchProvider
     {
-        MiniBranchAndBound solver = t_solver ??= new MiniBranchAndBound(nodeBudget, maxHops: 8);
-        return solver.Solve(graph.View, Source, sink, ref scratch);
+        if (t_solver is null || t_nodeBudget != nodeBudget)
+        {
+            t_solver = new MiniBranchAndBound(nodeBudget, maxHops: 8);
+            t_nodeBudget = nodeBudget;
+        }
+
+        return t_solver.Solve(graph.View, metrics, Source, sink, ref scratch);
     }
 }
 
@@ -333,6 +357,7 @@ public class SolverIncrementalBench
     private Arena _arena = null!;
     private ThreadLocalArena _arenas = null!;
     private PathPoolMock _pool = null!;
+    private BnBMetrics _metrics;
     private nuint _scratchBytes;
     private int _sink;
 
@@ -350,7 +375,11 @@ public class SolverIncrementalBench
         _graph = CsrGraph.CreateRandom(NodeCount);
         _sink = NodeCount / 2;
         _pool = new PathPoolMock();
-        _scratchBytes = ((nuint)MiniBranchAndBound.ScratchLengthFor(_graph.View) * sizeof(float)) + 64;
+
+        // Measured once: the per-graph constants are O(N)+O(E), and paying for them
+        // on every round would drown the per-round allocator difference.
+        _metrics = MiniBranchAndBound.Measure(_graph.View);
+        _scratchBytes = ((nuint)_metrics.ScratchLength * sizeof(float)) + 64;
         _arena = new Arena(_scratchBytes);
         _arenas = new ThreadLocalArena(_scratchBytes);
     }
@@ -370,7 +399,7 @@ public class SolverIncrementalBench
         for (int round = 0; round < Rounds; round++)
         {
             var scratch = new PathPoolScratchProvider(_pool);
-            sum += _solver.Solve(_graph.View, Source, _sink, ref scratch);
+            sum += _solver.Solve(_graph.View, _metrics, Source, _sink, ref scratch);
         }
 
         return sum;
@@ -386,7 +415,7 @@ public class SolverIncrementalBench
         for (int round = 0; round < Rounds; round++)
         {
             var scratch = new ArenaScratchProvider(_arena);
-            sum += _solver.Solve(_graph.View, Source, _sink, ref scratch);
+            sum += _solver.Solve(_graph.View, _metrics, Source, _sink, ref scratch);
         }
 
         return sum;
@@ -401,7 +430,7 @@ public class SolverIncrementalBench
         {
             using var arena = new Arena(_scratchBytes);
             var scratch = new ArenaScratchProvider(arena);
-            sum += _solver.Solve(_graph.View, Source, _sink, ref scratch);
+            sum += _solver.Solve(_graph.View, _metrics, Source, _sink, ref scratch);
         }
 
         return sum;
@@ -418,7 +447,7 @@ public class SolverIncrementalBench
         for (int round = 0; round < Rounds; round++)
         {
             var scratch = new ArenaScratchProvider(arena);
-            sum += _solver.Solve(_graph.View, Source, _sink, ref scratch);
+            sum += _solver.Solve(_graph.View, _metrics, Source, _sink, ref scratch);
         }
 
         return sum;
@@ -434,7 +463,7 @@ public class SolverIncrementalBench
         for (int round = 0; round < Rounds; round++)
         {
             var scratch = new ArrayPoolScratchProvider(pool);
-            sum += _solver.Solve(_graph.View, Source, _sink, ref scratch);
+            sum += _solver.Solve(_graph.View, _metrics, Source, _sink, ref scratch);
         }
 
         return sum;
