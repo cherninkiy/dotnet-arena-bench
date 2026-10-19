@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ArenaBench.Core\ArenaBench.Core.csproj" />
+    <ProjectReference Include="..\ArenaBench.Serialization.Core\ArenaBench.Serialization.Core.csproj" />
   </ItemGroup>
 
 </Project>
