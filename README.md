@@ -62,11 +62,12 @@ PoC проверяет гипотезу: **arena поверх unmanaged-памя
 - **Параллелизм:** single-threaded, `Parallel.For`
   (thread-local vs shared).
 
-К Дню 3 реализованы серии A (`A01`–`A04`: alloc/free, batch, churn, zeroing),
-B (`B01`–`B03`: Span/Memory, AoS vs SoA) и E (`E01`–`E05`: CSR, B&B rollback,
-parallel, incremental solve) плюс ядро `ArenaBench.Allocator.Core`
-(микро-CSR, `PathPoolMock`, Mini B&B). Серии I (границы) и M (mixed workload) —
-День 4.
+Реализованы все серии: A (`A01`–`A04`: alloc/free, batch, churn, zeroing),
+B (`B01`–`B03`: Span/Memory, AoS vs SoA), E (`E01`–`E05`: CSR, B&B rollback,
+parallel, incremental solve), I (`I01`–`I09`: libc, `[UnmanagedCallersOnly]`,
+egress, mmap, raw-экспорт) и M (`M01`–`M04`: mixed workload и skew) плюс ядро
+`ArenaBench.Allocator.Core` (микро-CSR, `PathPoolMock`, Mini B&B, сценарии
+границ, генератор workload).
 
 Нативная сторона — **без C-кода**: P/Invoke на libc
 (`memcpy`/`memset`/`memcmp`) и `[UnmanagedCallersOnly]`
@@ -184,8 +185,8 @@ Push и pull_request идут без входов: `--job short`, вся мат�
 (`*T2ServiceRecord16Bench*`, 20 кейсов: все источники, все стратегии и арена на
 16-байтовой записи) и `*Allocator.Bench.SmokeBench*` в PoC-2 (4 кейса: rent,
 `Reset`, `Mark`/`Release`, create/dispose). Это держит бенч-шаги в пределах
-~3 минут на ОС (полный набор PoC-1 — ~15 минут, матрица PoC-2 после Дня 3 —
-174 кейса); остальные серии запускаются ручным прогоном (у входа `filter` по
+~3 минут на ОС (полный набор PoC-1 — ~15 минут, матрица PoC-2 — 235 кейсов);
+остальные серии запускаются ручным прогоном (у входа `filter` по
 умолчанию `*`, то есть ручной запуск идёт по всему набору). Логика T1/T3 при
 этом не остаётся без проверки: их стратегии и парсеры кросс-проверяются
 юнит-тестами, которые CI гоняет на каждой ОС; ядро PoC-2 (CSR, пул семантики
@@ -215,6 +216,21 @@ CI-прогон (`--job short`) и ручной `--job default` в CI — по-�
 5. **Решение**: тащить arena в netgraph-optimizer или нет, и в какие точки.
 
 Полные критерии, план работ, риски — в [`docs/concept.md`](docs/concept.md).
+
+## Результаты
+
+- **[PoC-1: сериализация](docs/poc-1-serialization.md)** — матрица T1/T2/T3:
+  span-based чтение в 2.5–8 раз быстрее `BinaryReader` (11× на кадрах), арена под
+  парсинг не даёт ничего, alignment на sequential-чтении не виден.
+- **[PoC-2: аллокатор](docs/poc-2-allocator.md)** — серии A/B/E/I/M: арена в
+  0.13–0.29× от пулов на партиях, B&B rollback в 1.4–3.2× быстрее `PathPool`,
+  per-type арены 1.48–2.27×, на границах P/Invoke — паритет с pinned-массивом.
+- **[Итог и решения](docs/summary.md)** — сводная таблица «точка → решение →
+  обоснование», отрицательные результаты и порядок внедрения.
+
+Числа обоих отчётов сняты `--job short` на рабочей машине: это тренд и отбор
+гипотез, а не финальные таблицы (для них нужен `--job default` на выделенной
+машине).
 
 ## Полный план
 
