@@ -29,6 +29,16 @@ public readonly struct ArenaMark
 /// RAII scope: <see cref="Dispose"/> rolls the arena offset back to the mark
 /// captured at creation (ADR-001 D4).
 ///
+/// Dispose is <em>single-shot</em>: the rollback runs first and only then is the
+/// scope marked as used, so a <see cref="Arena.Release"/> that throws (stale mark
+/// after a <c>Reset</c>, foreign mark, out-of-order release) leaves the scope armed
+/// and a second Dispose reports the same failure instead of swallowing it. That is
+/// deliberate: a failed rollback means the offset was <em>not</em> restored, and
+/// hiding it behind a silent no-op would be worse than a repeated exception. In
+/// other words, Dispose is idempotent after a successful rollback and not
+/// idempotent in the failure branch - the scope is then spent and the caller is
+/// expected to have seen the exception.
+///
 /// Deliberately a <c>ref struct</c> (like <c>Span&lt;T&gt;</c>): a scope must
 /// not outlive the stack frame that owns the arena operations — no boxing,
 /// no fields in classes, no crossing <c>async</c>/iterator boundaries, which

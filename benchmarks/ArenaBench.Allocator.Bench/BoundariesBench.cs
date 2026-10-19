@@ -22,7 +22,12 @@ namespace ArenaBench.Allocator.Bench;
 /// </remarks>
 public class BoundariesBench
 {
-    /// <summary>I05: callback invocations per operation.</summary>
+    /// <summary>
+    /// I05: <c>CallbackCalls</c> invocations per operation, each over an equal window
+    /// of the buffer. The windows are reduced to the buffer: on 32 B with 64 calls the
+    /// call count is cut to 32 windows of one byte, because a zero-byte window would
+    /// make the callback read nothing and the case would measure the transit alone.
+    /// </summary>
     private const int CallbackCalls = 64;
 
     private Arena _arena = null!;
@@ -141,7 +146,7 @@ public class BoundariesBench
         }
     }
 
-    /// <summary>I05: 64 invocations per operation over equal windows of the arena block.</summary>
+    /// <summary>I05: <c>CallbackCalls</c> invocations per operation over equal, non-empty windows (see above).</summary>
     [Benchmark]
     public unsafe long I05_Arena_CallbackRepeated() =>
         NativeCallbackScenarios.InvokeRepeatedly(_ours, SizeBytes, CallbackCalls);

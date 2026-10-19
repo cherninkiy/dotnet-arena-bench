@@ -82,6 +82,11 @@
 | mmap (I08) | арена поверх mapping ≡ арена поверх native (0.64–0.71×), BCL-аксессор в 3.8–19.9× дороже |
 | Mixed workload (M01–M04) | per-type арены: 1.48× на balanced, 2.27× на skew |
 
+`Allocated = 0` в таблицах PoC-2 — **только для bump-API** арены
+(`AllocSpan`/`AllocPtr`) и для `NativeMemory`: `AllocMemory` заводит
+`ArenaMemoryManager` (40 B/op, B02), пересоздание блока — `Arena` +
+`SafeArenaHandle` (704–5 632 B/op, E05). RSS при этом нигде не собирался (см. §2).
+
 ## 5. Сводная таблица решений для netgraph-optimizer
 
 | Точка | Сейчас | Решение | Основание |

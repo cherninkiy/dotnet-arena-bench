@@ -85,6 +85,16 @@ public sealed class ThreadLocalArena : IDisposable
     /// <see cref="SafeArenaHandle"/> finalizer and only then leaves
     /// <c>LiveCount</c>. Calling Dispose twice, or from several threads at once,
     /// is a no-op after the first call.
+    /// <para>
+    /// The race is inherent, not an oversight: a worker that passed the disposed
+    /// check inside <see cref="Current"/> just before this call can still create an
+    /// arena after the registry has been drained. Such an arena is not leaked - the
+    /// handle finalizer reclaims its block - but it is not freed by Dispose either,
+    /// so the caller has to join its workers first. The registry removes the need for
+    /// the arena to be reachable from the worker's <see cref="ThreadLocal{T}"/>, not
+    /// the need for a happens-before edge between the last <see cref="Current"/> and
+    /// this call.
+    /// </para>
     /// </summary>
     public void Dispose()
     {

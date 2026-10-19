@@ -227,6 +227,11 @@ public class SolverParallelBench
         _nodeBudget = 128;
         _pool = new PathPoolMock();
 
+        // BDN does not reset thread-static state between benchmarks, and the solver
+        // below is per-node stateful: dropping it here means a parameter change picks
+        // up a fresh instance instead of the one the previous benchmark left behind.
+        t_solver = null;
+
         _metrics = MiniBranchAndBound.Measure(_graph.View);
         nuint scratchBytes = ((nuint)_metrics.ScratchLength * sizeof(float)) + 64;
         _arenas = new ThreadLocalArena(scratchBytes);

@@ -95,8 +95,9 @@ mmap (I08). Для честного сравнения «arena vs pinned managed
 `PlatformNotSupportedException`), а обёрточный путь продолжает работать. Это не
 теория: первая версия вызывала `NativeLibrary.Load("libSystem")` и падала на
 macOS в инициализации типа, утаскивая за собой всю I-серию вместе с тестами
-обёрточного пути. Проверено на glibc, macOS и Windows; на Alpine/musl `libc.so.6`
-может отсутствовать — там сработает только `libc`, если он есть в образе.
+обёрточного пути. Проверено только на glibc (CI-матрица), macOS и Windows; musl/Alpine —
+**открытый вопрос**: `libc.so.6` там может отсутствовать, и сработает только
+`libc`, если он есть в образе.
 
 Резолюция — через `RuntimeInformation.IsOSPlatform` в `LibcResolver.cs`
 (имена библиотек + пробы ОС). Так как `LibraryImport` требует

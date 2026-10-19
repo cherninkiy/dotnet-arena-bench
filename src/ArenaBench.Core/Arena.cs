@@ -18,6 +18,19 @@ public sealed class Arena : IDisposable
     // Identity of this arena, handed to every mark it issues. Without it a mark
     // from another arena looks perfectly valid here (generations of two arenas
     // coincide, the offset is in range) and would roll back an unrelated block.
+    /// <summary>
+    /// Identity of the arena, handed to every mark it issues. With it a mark from
+    /// another arena is rejected by <see cref="Release"/>.
+    /// <para>
+    /// BOUND: the id comes from a process-wide <see cref="Interlocked.Increment(ref int)"/>
+    /// counter and wraps at <see cref="int.MaxValue"/>, so two arenas could share an
+    /// id after ~2.1 billion creations in one process. A stale mark is then rejected
+    /// only if its generation or offset no longer fit - the id alone would not tell
+    /// the two apart. Unreachable for a solver process; a long-lived service that
+    /// creates arenas forever needs a 64-bit id (and a 24-byte
+    /// <see cref="ArenaMark"/> instead of 16).
+    /// </para>
+    /// </summary>
     private readonly int _id;
     private nuint _offset;
     private uint _generation;

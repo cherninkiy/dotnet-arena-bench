@@ -362,6 +362,22 @@ public class ArenaTests
     }
 
     [Fact]
+    public void Release_ForeignMark_ReportsBothArenaIds()
+    {
+        // The id is not only printed: Release compares it before generation and
+        // offset, so a foreign mark is reported as foreign (not as a stale one), and
+        // the message carries both ids - a log line is enough to find the other arena.
+        using var first = new Arena(1024);
+        using var second = new Arena(1024);
+        ArenaMark foreign = second.Mark();
+
+        ArgumentException error = Assert.Throws<ArgumentException>(() => first.Release(foreign));
+
+        Assert.Contains(foreign.ArenaId.ToString("X8"), error.Message, StringComparison.Ordinal);
+        Assert.Contains("while this arena is", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MemoryView_AfterReset_Throws()
     {
         // ADR-001 D9 with the generation check: the view is not silently stale, it
