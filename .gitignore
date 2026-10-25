@@ -60,6 +60,10 @@ dlldata.c
 # Benchmark Results
 BenchmarkDotNet.Artifacts/
 
+# Local benchmark payloads under results/: manifests and checksums stay tracked.
+results/**/results/
+results/**/*.log
+
 # .NET
 project.lock.json
 project.fragment.lock.json
